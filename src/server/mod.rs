@@ -4,9 +4,13 @@ use std::{
 	thread,
 };
 
+enum ServerStatus {
+	Binded(TcpListener),
+	Running(thread::JoinHandle<()>),
+}
+
 pub struct TolliverServer {
-	listener: Option<TcpListener>,
-	join_handle: Option<thread::JoinHandle<()>>,
+	status: ServerStatus,
 }
 
 impl TolliverServer {
@@ -24,8 +28,7 @@ impl TolliverServer {
 		A: net::ToSocketAddrs,
 	{
 		let server = Self {
-			listener: Some(TcpListener::bind(addr)?),
-			join_handle: None,
+			status: ServerStatus::Binded(TcpListener::bind(addr)?),
 		};
 
 		Ok(server)
@@ -33,22 +36,23 @@ impl TolliverServer {
 
 	/// Starts a thread with the server on it.
 	///
-	/// # Panics
+	/// # Errors
 	///
-	/// Panics if `run` has already been called.
+	/// Returns `None` if already running.
 	pub fn run(mut self) -> Option<Self> {
 		// The listener is set in the constructor, so it would only be None if
 		// `run` has already been called. In that case panic.
-		let listener = self.listener.unwrap();
-		self.listener = None;
-		let thread_join_handle = thread::spawn(move || {
+		let listener = match self.status {
+			ServerStatus::Binded(listener) => listener,
+			ServerStatus::Running(_) => return None,
+		};
+		let join_handle = thread::spawn(move || {
 			// accept connections and process them serially
 			for stream in listener.incoming() {
 				handle_client(stream.unwrap());
 			}
 		});
-
-		self.join_handle = Some(thread_join_handle);
+		self.status = ServerStatus::Running(join_handle);
 		Some(self)
 	}
 
@@ -59,9 +63,9 @@ impl TolliverServer {
 	/// This function will return None if the server has not been started, and
 	/// an error if there was an issue stopping the thread.
 	pub fn wait(self) -> Option<thread::Result<()>> {
-		match self.join_handle {
-			Some(handle) => Some(handle.join()),
-			None => None,
+		match self.status {
+			ServerStatus::Binded(_) => None,
+			ServerStatus::Running(handle) => Some(handle.join()),
 		}
 	}
 }
