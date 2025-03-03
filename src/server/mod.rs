@@ -1,16 +1,28 @@
+use core::panic;
 use std::{
 	io,
 	net::{self, TcpListener, TcpStream},
+	sync::mpsc::{self, Receiver, Sender, TryRecvError},
 	thread,
 };
 
-enum ServerStatus {
-	Binded(TcpListener),
-	Running(thread::JoinHandle<()>),
-}
-
 pub struct TolliverServer {
 	status: ServerStatus,
+	thread_stop_tx: Sender<()>,
+}
+
+enum ServerStatus {
+	Binded(BindedServerData),
+	Running(RunningServerData),
+}
+
+struct BindedServerData {
+	listener: TcpListener,
+	thread_stop_rx: Receiver<()>,
+}
+
+struct RunningServerData {
+	join_handle: thread::JoinHandle<()>,
 }
 
 impl TolliverServer {
@@ -27,8 +39,14 @@ impl TolliverServer {
 	where
 		A: net::ToSocketAddrs,
 	{
+		let (thread_stop_tx, thread_stop_rx) = mpsc::channel();
+		let binded_data = BindedServerData {
+			listener: TcpListener::bind(addr)?,
+			thread_stop_rx,
+		};
 		let server = Self {
-			status: ServerStatus::Binded(TcpListener::bind(addr)?),
+			status: ServerStatus::Binded(binded_data),
+			thread_stop_tx,
 		};
 
 		Ok(server)
@@ -42,18 +60,31 @@ impl TolliverServer {
 	pub fn run(mut self) -> Option<Self> {
 		// The listener is set in the constructor, so it would only be None if
 		// `run` has already been called. In that case panic.
-		let listener = match self.status {
-			ServerStatus::Binded(listener) => listener,
+		let binded_data = match self.status {
+			ServerStatus::Binded(data) => data,
 			ServerStatus::Running(_) => return None,
 		};
 		let join_handle = thread::spawn(move || {
 			// accept connections and process them serially
-			for stream in listener.incoming() {
+			for stream in binded_data.listener.incoming() {
 				handle_client(stream.unwrap());
+				match binded_data.thread_stop_rx.try_recv() {
+					Ok(()) => return,
+					Err(TryRecvError::Empty) => {}
+					// Should never happen
+					Err(TryRecvError::Disconnected) => {
+						panic!("Thread shutdown sender disconnected")
+					}
+				}
 			}
 		});
-		self.status = ServerStatus::Running(join_handle);
+		let server_data = RunningServerData { join_handle };
+		self.status = ServerStatus::Running(server_data);
 		Some(self)
+	}
+
+	pub fn send_stop(&self) -> Result<(), mpsc::SendError<()>> {
+		self.thread_stop_tx.send(())
 	}
 
 	/// Waits until the server shuts down.
@@ -65,7 +96,7 @@ impl TolliverServer {
 	pub fn wait(self) -> Option<thread::Result<()>> {
 		match self.status {
 			ServerStatus::Binded(_) => None,
-			ServerStatus::Running(handle) => Some(handle.join()),
+			ServerStatus::Running(data) => Some(data.join_handle.join()),
 		}
 	}
 }

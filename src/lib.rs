@@ -8,6 +8,7 @@ mod tests {
 	#[test]
 	fn start_server() {
 		let server = server::TolliverServer::bind().unwrap().run().unwrap();
+		server.send_stop().unwrap();
 		client::connect().unwrap();
 		server.wait().unwrap().unwrap();
 	}
