@@ -68,14 +68,9 @@ impl TolliverServer {
 			// accept connections and process them serially
 			for stream in binded_data.listener.incoming() {
 				handle_client(stream.unwrap());
-				match binded_data.thread_stop_rx.try_recv() {
-					Ok(()) => return,
-					Err(TryRecvError::Empty) => {}
-					// Should never happen
-					Err(TryRecvError::Disconnected) => {
-						panic!("Thread shutdown sender disconnected")
-					}
-				}
+				if recieved_stop(&binded_data.thread_stop_rx) {
+					return;
+				};
 			}
 		});
 		let server_data = RunningServerData { join_handle };
@@ -100,6 +95,18 @@ impl TolliverServer {
 		}
 	}
 }
+
+fn recieved_stop(thread_stop_rx: &Receiver<()>) -> bool {
+	match thread_stop_rx.try_recv() {
+		Ok(()) => true,
+		Err(TryRecvError::Empty) => false,
+		// Should never happen
+		Err(TryRecvError::Disconnected) => {
+			panic!("Thread shutdown sender disconnected")
+		}
+	}
+}
+
 fn handle_client(stream: TcpStream) {
 	println!("Got connection!")
 }
