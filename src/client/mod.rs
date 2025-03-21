@@ -1,6 +1,6 @@
 use std::{
 	io::{self, Write},
-	net::TcpStream,
+	net::{self, TcpStream},
 };
 
 pub struct TolliverClient {
@@ -8,8 +8,11 @@ pub struct TolliverClient {
 }
 
 impl TolliverClient {
-	pub fn connect() -> io::Result<Self> {
-		let tcp_stream = TcpStream::connect("127.0.0.1:8080")?;
+	pub fn connect<A>(addr: A) -> io::Result<Self>
+	where
+		A: net::ToSocketAddrs,
+	{
+		let tcp_stream = TcpStream::connect(addr)?;
 		Ok(Self { tcp_stream })
 	}
 

@@ -9,13 +9,13 @@ pub struct TolliverServer {
 }
 
 impl TolliverServer {
-	/// Starts the Tolliver server at port 8080, to specify the port use `bind_at`
+	/// Starts the Tolliver server at an avaliable port, to specify the port use `bind_at`
 	///
 	/// # Errors
 	///
 	/// This function will return an error if the server cannot be started.
 	pub fn bind() -> io::Result<Self> {
-		Self::bind_at("0.0.0.0:8080")
+		Self::bind_at("0.0.0.0:0")
 	}
 
 	/// Starts the Tolliver server at a specific address, similar to `TcpListener`
