@@ -7,7 +7,6 @@ mod tests {
 	use core::panic;
 	use std::thread;
 
-	use client::TolliverClient;
 	use server::TolliverServer;
 
 	use super::*;
@@ -18,7 +17,7 @@ mod tests {
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
-			TolliverClient::connect(address).unwrap();
+			client::connect(address).unwrap();
 		});
 		for _connection in incoming {
 			return;
