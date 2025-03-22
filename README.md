@@ -8,6 +8,6 @@ A message passing Rust library for sending both fast messages and those that req
 
 ## Protocol
 
-2 bytes - u16 of version (max version is therefore 65536)
-2 bytes - u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
+2 bytes - big endian u16 of version (max version is therefore 65536)
+2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
 rest of message - body encoded with protocol buffers
