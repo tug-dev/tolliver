@@ -44,11 +44,44 @@ mod tests {
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address).unwrap();
-			conn.fast_send(shirt).unwrap();
+			conn.fast_send(&shirt).unwrap();
 		});
 		for mut connection in incoming {
-			let received_shirt: items::Shirt = connection.read().unwrap();
-			assert_eq!(expected_shirt, received_shirt);
+			assert_eq!(expected_shirt, connection.read().unwrap());
+			return;
+		}
+		panic!("Incoming somehow ended")
+	}
+
+	#[test]
+	fn multi_send() {
+		let mut red_shirt = items::Shirt::default();
+		red_shirt.color = "Red".to_string();
+		red_shirt.set_size(items::shirt::Size::Large);
+		let expected_red_shirt = red_shirt.clone();
+
+		let mut blue_shirt = items::Shirt::default();
+		blue_shirt.color = "Blue".to_string();
+		blue_shirt.set_size(items::shirt::Size::Medium);
+		let expected_blue_shirt = blue_shirt.clone();
+
+		let server = TolliverServer::bind().unwrap();
+		let incoming = server.run();
+		let address = server.listener.local_addr().unwrap();
+		thread::spawn(move || {
+			let mut conn = client::connect(address).unwrap();
+			conn.fast_send(&red_shirt).unwrap();
+			conn.fast_send(&blue_shirt).unwrap();
+			conn.fast_send(&red_shirt).unwrap();
+			conn.fast_send(&red_shirt).unwrap();
+			conn.fast_send(&blue_shirt).unwrap();
+		});
+		for mut connection in incoming {
+			assert_eq!(expected_red_shirt, connection.read().unwrap());
+			assert_eq!(expected_blue_shirt, connection.read().unwrap());
+			assert_eq!(expected_red_shirt, connection.read().unwrap());
+			assert_eq!(expected_red_shirt, connection.read().unwrap());
+			assert_eq!(expected_blue_shirt, connection.read().unwrap());
 			return;
 		}
 		panic!("Incoming somehow ended")

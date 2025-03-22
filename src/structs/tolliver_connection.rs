@@ -43,7 +43,7 @@ impl TolliverConnection {
 	}
 
 	/// Sends a fast message with no deliverability guarantees
-	pub fn fast_send(&mut self, object: impl Message) -> io::Result<()> {
+	pub fn fast_send(&mut self, object: &impl Message) -> io::Result<()> {
 		// See protocol documentation for details
 		let body_length: u16 = match object.encoded_len().try_into() {
 			Ok(r) => r,
