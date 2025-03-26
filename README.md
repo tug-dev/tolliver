@@ -17,10 +17,10 @@ The server and the client first establish a TCP socket between them, after which
 
 Then the server replies in the following format:
 
-1 byte - success/error code, with a 0 corresponding with success while 1-255 being an error.
+1 byte - handshake (success/error) code, with a 0 corresponding with success while 1-255 being an error.
 2 bytes - big endian u16 of server version
 
-#### Server handshake response codes
+#### Server handshake codes
 
 0 - Success
 1 - General error

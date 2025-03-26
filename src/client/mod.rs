@@ -3,14 +3,13 @@ use std::{
 	net::{self, TcpStream},
 };
 
-use handshake_error::HandshakeError;
-
 use crate::{
-	structs::tolliver_connection::TolliverConnection, VersionType, API_KEY_LENGTH,
-	SERVER_RESPONSE_CODE_LENGTH, VERSION, VERSION_LENGTH,
+	structs::{
+		handshake::{HandshakeCode, HandshakeError},
+		tolliver_connection::TolliverConnection,
+	},
+	VersionType, API_KEY_LENGTH, HANDSHAKE_CODE_LENGTH, VERSION, VERSION_LENGTH,
 };
-
-mod handshake_error;
 
 pub fn connect<A>(
 	addr: A,
@@ -30,20 +29,16 @@ where
 	buf.extend(api_key);
 	stream.write_all(&buf)?;
 
-	let mut server_respose_code_buf = [0; SERVER_RESPONSE_CODE_LENGTH];
-	stream.read_exact(&mut server_respose_code_buf)?;
+	let mut handshake_code_buf = [0; HANDSHAKE_CODE_LENGTH];
+	stream.read_exact(&mut handshake_code_buf)?;
 	let mut version_buf = [0; VERSION_LENGTH];
 	stream.read_exact(&mut version_buf)?;
 	let version = VersionType::from_be_bytes(version_buf);
 
-	return match server_respose_code_buf[0] {
-		0 => Ok(TolliverConnection { stream }),
-		1 => Err(HandshakeError::GeneralError),
-		2 => Err(HandshakeError::IncompatibleVersion(version)),
-		3 => Err(HandshakeError::Unauthorized),
-		code => Err(HandshakeError::UnknowErrorCode(code)),
-	};
-	// if version != VERSION {
-	// 	todo!("Version mismatch")
-	// }
+	match handshake_code_buf {
+		[0] => Ok(TolliverConnection { stream }),
+		[code] => Err(HandshakeError::Result(HandshakeCode::from_status_code(
+			code, version,
+		))),
+	}
 }

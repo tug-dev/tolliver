@@ -6,6 +6,9 @@ pub mod structs;
 /// The "version type" is the type of the literal version number. It should
 /// correspond with the number of bytes in the VERSION_LENGTH.
 type VersionType = u16;
+/// The "server status code type" is the type of the literal status code. It
+/// should correspond with the number of bytes in SERVER_RESPONSE_CODE_LENGTH.
+pub type HandshakeCodeType = u8;
 
 /// The version of the protocol
 const VERSION: VersionType = 0;
@@ -14,7 +17,7 @@ const VERSION_LENGTH: usize = 2;
 /// The number of bytes the API key is encoded in
 const API_KEY_LENGTH: usize = 32;
 /// The number of bytes the server success/error response is encoded in
-const SERVER_RESPONSE_CODE_LENGTH: usize = 1;
+const HANDSHAKE_CODE_LENGTH: usize = 1;
 
 // TODO Use env var
 const TEMP_API_KEY: [u8; API_KEY_LENGTH] = [0; API_KEY_LENGTH];
