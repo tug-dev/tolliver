@@ -3,6 +3,8 @@ use std::{
 	net::TcpStream,
 };
 
+use log::warn;
+
 use crate::{
 	server::TolliverServer, VersionType, API_KEY_LENGTH, HANDSHAKE_CODE_LENGTH, TEMP_API_KEY,
 	VERSION, VERSION_LENGTH,
@@ -27,28 +29,35 @@ fn tcp_to_tolliver_connection(stream: io::Result<TcpStream>) -> Option<TolliverC
 
 	check_version(&mut stream)?;
 	check_api_key(&mut stream)?;
-	// TODO log error
 	// Send success to client
 	let success_code = HandshakeCode::Success.status_code();
-	if write_response(&mut stream, success_code).is_err() {
-		return None;
+	match write_response(&mut stream, success_code) {
+		Ok(()) => Some(TolliverConnection { stream }),
+		Err(e) => {
+			warn!("Failed to send success to client: {e}");
+			// We don't know how many bytes have been sent to the client so just
+			// terminate the TCP connection.
+			return None;
+		}
 	}
-
-	Some(TolliverConnection { stream })
 }
 
 fn check_version(stream: &mut TcpStream) -> Option<()> {
 	let mut version_buf = [0; VERSION_LENGTH];
-	// TODO Log error
-	let _res = stream.read_exact(&mut version_buf);
+	match stream.read_exact(&mut version_buf) {
+		Ok(()) => {}
+		Err(e) => {
+			warn!("Handshake failed: could not read version: {e}");
+			return None;
+		}
+	};
 	let version = VersionType::from_be_bytes(version_buf);
 
 	if version != VERSION {
 		let handshake_code = HandshakeCode::IncompatibleVersion(0).status_code();
-		// Ignore result here because we're returning that the connection failed
-		// anyway
-		// TODO Log error
-		let _res = write_response(stream, handshake_code);
+		write_response(stream, handshake_code).unwrap_or_else(|e| {
+			warn!("Handshake failed: could not send incompatible version error: {e}")
+		});
 		return None;
 	}
 	Some(())
@@ -56,15 +65,22 @@ fn check_version(stream: &mut TcpStream) -> Option<()> {
 
 fn check_api_key(stream: &mut TcpStream) -> Option<()> {
 	let mut api_key = [0; API_KEY_LENGTH];
-	// TODO Log error
-	let _res = stream.read_exact(&mut api_key);
+	match stream.read_exact(&mut api_key) {
+		Ok(()) => {}
+		Err(e) => {
+			warn!("Handshake failed: could not api key: {e}");
+			return None;
+		}
+	};
 
+	// TODO Hash api key
 	if api_key != TEMP_API_KEY {
 		let handshake_code = HandshakeCode::Unauthorised.status_code();
 		// Ignore result here because we're returning that the connection failed
 		// anyway
-		// TODO Log error
-		let _res = write_response(stream, handshake_code);
+		write_response(stream, handshake_code).unwrap_or_else(|e| {
+			warn!("Handshake failed: could not send incompatible version error: {e}")
+		});
 		return None;
 	}
 	Some(())
