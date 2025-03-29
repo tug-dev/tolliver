@@ -6,6 +6,8 @@ use std::{
 
 use prost::Message;
 
+use crate::error::TolliverError;
+
 type BodyLengthType = u16;
 
 /// The number of bytes the body length is encoded in
@@ -31,12 +33,17 @@ impl TolliverConnection {
 		Ok(message)
 	}
 
-	/// Sends a fast message with no deliverability guarantees
-	pub fn fast_send(&mut self, object: &impl Message) -> io::Result<()> {
+	/// Sends a fast message with no deliverability guarantees. This attempts to
+	/// return as early as possible when it fails so something else can be tried.
+	pub fn fast_send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
 		// See protocol documentation for details
 		let body_length: u16 = match object.encoded_len().try_into() {
 			Ok(r) => r,
-			Err(_) => panic!("could not encode length into u16, most likely object is too large"),
+			Err(_) => {
+				return Err(TolliverError::TolliverError(
+					"Could not encode length into u16, most likely object is too large",
+				))
+			}
 		};
 
 		let total_length = BODY_LENGTH_LENGTH + body_length as usize;
@@ -50,6 +57,7 @@ impl TolliverConnection {
 		// Unwrap is safe, since we have reserved sufficient capacity in the vector.
 		object.encode(&mut body_buf).unwrap();
 		buf.extend(body_buf);
-		self.stream.write_all(&buf)
+		self.stream.write_all(&buf)?;
+		Ok(())
 	}
 }

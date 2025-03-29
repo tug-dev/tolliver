@@ -1,12 +1,12 @@
 use std::{error::Error, fmt, io};
 
 #[derive(Debug)]
-pub enum TolliverError {
+pub enum TolliverError<'a> {
 	IOError(io::Error),
-	TolliverError(String),
+	TolliverError(&'a str),
 }
 
-impl fmt::Display for TolliverError {
+impl<'a> fmt::Display for TolliverError<'a> {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			TolliverError::IOError(e) => write!(f, "{}", e),
@@ -15,7 +15,7 @@ impl fmt::Display for TolliverError {
 	}
 }
 
-impl Error for TolliverError {
+impl<'a> Error for TolliverError<'a> {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
 			TolliverError::IOError(e) => Some(e),
@@ -24,7 +24,7 @@ impl Error for TolliverError {
 	}
 }
 
-impl From<io::Error> for TolliverError {
+impl<'a> From<io::Error> for TolliverError<'a> {
 	fn from(value: io::Error) -> Self {
 		TolliverError::IOError(value)
 	}
