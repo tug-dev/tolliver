@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Logging
 log = "0.4.27"
+# ProtoBufs
 prost = "0.13.5"
+# SQL
+rusqlite = "0.34.0"
 
 [build-dependencies]
 prost-build = "0.13.5"

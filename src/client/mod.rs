@@ -36,7 +36,7 @@ where
 	let version = VersionType::from_be_bytes(version_buf);
 
 	match handshake_code_buf {
-		[0] => Ok(TolliverConnection { stream }),
+		[0] => TolliverConnection::new(stream).map_err(|e| HandshakeError::DbError(e)),
 		[code] => Err(HandshakeError::Result(HandshakeCode::from_status_code(
 			code, version,
 		))),

@@ -74,6 +74,7 @@ impl HandshakeCode {
 #[derive(Debug)]
 pub enum HandshakeError {
 	IOError(io::Error),
+	DbError(rusqlite::Error),
 	Result(HandshakeCode),
 }
 
@@ -81,6 +82,7 @@ impl fmt::Display for HandshakeError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
 			HandshakeError::IOError(e) => write!(f, "{}", e),
+			HandshakeError::DbError(e) => write!(f, "{}", e),
 			HandshakeError::Result(code) => write!(f, "{}", code),
 		}
 	}

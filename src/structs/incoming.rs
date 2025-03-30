@@ -32,7 +32,13 @@ fn tcp_to_tolliver_connection(stream: io::Result<TcpStream>) -> Option<TolliverC
 	// Send success to client
 	let success_code = HandshakeCode::Success.status_code();
 	match write_response(&mut stream, success_code) {
-		Ok(()) => Some(TolliverConnection { stream }),
+		Ok(()) => match TolliverConnection::new(stream) {
+			Ok(conn) => Some(conn),
+			Err(e) => {
+				warn!("Error creating TolliverConnection: {e}");
+				None
+			}
+		},
 		Err(e) => {
 			warn!("Failed to send success to client: {e}");
 			// We don't know how many bytes have been sent to the client so just
