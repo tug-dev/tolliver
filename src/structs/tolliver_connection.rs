@@ -20,10 +20,13 @@ pub struct TolliverConnection {
 }
 
 impl TolliverConnection {
-	pub fn new(stream: TcpStream) -> rusqlite::Result<Self> {
+	pub fn new(stream: TcpStream) -> Result<Self, TolliverError> {
 		let db = rusqlite::Connection::open(DB_PATH)?;
 		Self::init_db(&db)?;
-		let conn = Self { stream, db };
+		let mut conn = Self { stream, db };
+		for message in conn.read_from_disk()? {
+			conn.complete_send(message)?;
+		}
 		Ok(conn)
 	}
 
@@ -102,8 +105,7 @@ PRAGMA journal_mode=WAL;",
 		// Unwrap is safe, since we have reserved sufficient capacity in the vector.
 		object.encode(&mut body_buf).unwrap();
 
-		let peer = self.stream.peer_addr()?.to_string();
-		self.save_to_disk(peer, &body_buf)?;
+		let peer = self.stream.peer_addr()?;
 
 		let total_length = BODY_LENGTH_LENGTH + body_length as usize;
 		let mut buf = Vec::with_capacity(total_length);
@@ -113,31 +115,76 @@ PRAGMA journal_mode=WAL;",
 		buf.extend(body_length_bytes);
 
 		buf.extend(body_buf);
-		self.stream.write_all(&buf)?;
+		let id = self.save_to_disk(peer.to_string(), &buf)?;
+		let message = UnsentMessage {
+			id,
+			peer: peer.to_string(),
+			message: buf,
+		};
+		self.complete_send(message)?;
 		Ok(())
 	}
 
-	fn save_to_disk(&mut self, peer: String, body_buf: &Vec<u8>) -> rusqlite::Result<()> {
-		self.db.execute(
-			"INSERT INTO message (target, data) VALUES (?1, ?2)",
-			(peer, body_buf),
-		)?;
+	fn complete_send(&mut self, message: UnsentMessage) -> Result<(), TolliverError> {
+		self.stream.write_all(&message.message)?;
+		self.delete_from_disk(message.id)?;
 		Ok(())
 	}
 
-	fn read_from_disk(&mut self, peer: String) -> rusqlite::Result<Vec<Vec<u8>>> {
-		let mut stmt = self
+	fn delete_from_disk(&mut self, message_id: i32) -> rusqlite::Result<()> {
+		let rows_affected = self
 			.db
-			.prepare("SELECT data FROM message WHERE target = ?1")?;
-		let body_bufs = stmt.query_map([peer], |r| r.get(0))?;
+			.execute("DELETE FROM message WHERE id = ?1", (message_id,))?;
+		debug_assert_eq!(rows_affected, 1);
+		Ok(())
+	}
+
+	/// Saves the message to disk and returns the saved ID.
+	///
+	/// # Errors
+	///
+	/// This function will return an error if the SQL execution fails.
+	fn save_to_disk(&mut self, peer: String, body_buf: &Vec<u8>) -> rusqlite::Result<i32> {
+		let id: i32 = self.db.query_row(
+			"INSERT INTO message (target, data) VALUES (?1, ?2) RETURNING id",
+			(peer, body_buf),
+			|r| r.get(0),
+		)?;
+		Ok(id)
+	}
+
+	/// Returns a vector of unsent messages.
+	///
+	/// # Errors
+	///
+	/// This function will return an error if the SQL execution fails.
+	fn read_from_disk(&mut self) -> rusqlite::Result<Vec<UnsentMessage>> {
+		let mut stmt = self.db.prepare("SELECT id, target, data FROM message")?;
+		let body_bufs = stmt.query_map([], |r| {
+			Ok(UnsentMessage {
+				id: r.get(0)?,
+				peer: r.get(1)?,
+				message: r.get(2)?,
+			})
+		})?;
 		body_bufs.collect()
 	}
+}
+
+/// This represents a message that has been saved to disk and not yet sent.
+#[derive(Debug, PartialEq)]
+struct UnsentMessage {
+	id: i32,
+	peer: String,
+	message: Vec<u8>,
 }
 
 #[cfg(test)]
 mod tests {
 
 	use std::net::{TcpListener, TcpStream};
+
+	use crate::structs::tolliver_connection::UnsentMessage;
 
 	use super::TolliverConnection;
 
@@ -160,8 +207,14 @@ mod tests {
 		// Documentation address as per https://www.rfc-editor.org/rfc/rfc5737#section-3
 		let peer = "192.0.2.0:443";
 		conn.save_to_disk(peer.to_string(), &body_buf).unwrap();
-		let actual_body_bufs = conn.read_from_disk(peer.to_string()).unwrap();
-		assert_eq!(vec![body_buf], actual_body_bufs);
+
+		let expected_body_bufs = vec![UnsentMessage {
+			id: 1,
+			peer: peer.to_string(),
+			message: body_buf,
+		}];
+		let actual_body_bufs = conn.read_from_disk().unwrap();
+		assert_eq!(expected_body_bufs, actual_body_bufs);
 	}
 
 	#[test]
@@ -176,8 +229,19 @@ mod tests {
 		conn.save_to_disk(peer.to_string(), &body_buf).unwrap();
 		conn.save_to_disk(peer.to_string(), &body_buf2).unwrap();
 
-		let expected_body_bufs = vec![body_buf, body_buf2];
-		let actual_body_bufs = conn.read_from_disk(peer.to_string()).unwrap();
+		let expected_body_bufs = vec![
+			UnsentMessage {
+				id: 1,
+				peer: peer.to_string(),
+				message: body_buf,
+			},
+			UnsentMessage {
+				id: 2,
+				peer: peer.to_string(),
+				message: body_buf2,
+			},
+		];
+		let actual_body_bufs = conn.read_from_disk().unwrap();
 		assert_eq!(expected_body_bufs, actual_body_bufs);
 	}
 
@@ -190,7 +254,13 @@ mod tests {
 		// Documentation address as per https://www.rfc-editor.org/rfc/rfc5737#section-3
 		let peer = "192.0.2.0:443";
 		conn.save_to_disk(peer.to_string(), &body_buf).unwrap();
-		let actual_body_bufs = conn.read_from_disk(peer.to_string()).unwrap();
-		assert_eq!(vec![body_buf], actual_body_bufs);
+
+		let expected_body_bufs = vec![UnsentMessage {
+			id: 1,
+			peer: peer.to_string(),
+			message: body_buf,
+		}];
+		let actual_body_bufs = conn.read_from_disk().unwrap();
+		assert_eq!(expected_body_bufs, actual_body_bufs);
 	}
 }

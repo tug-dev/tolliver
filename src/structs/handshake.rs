@@ -4,7 +4,7 @@ use std::{
 	io,
 };
 
-use crate::{HandshakeCodeType, VersionType, VERSION};
+use crate::{error::TolliverError, HandshakeCodeType, VersionType, VERSION};
 
 #[derive(Debug, PartialEq)]
 pub enum HandshakeCode {
@@ -73,16 +73,14 @@ impl HandshakeCode {
 
 #[derive(Debug)]
 pub enum HandshakeError {
-	IOError(io::Error),
-	DbError(rusqlite::Error),
+	TolliverError(TolliverError),
 	Result(HandshakeCode),
 }
 
 impl fmt::Display for HandshakeError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			HandshakeError::IOError(e) => write!(f, "{}", e),
-			HandshakeError::DbError(e) => write!(f, "{}", e),
+			HandshakeError::TolliverError(e) => write!(f, "{}", e),
 			HandshakeError::Result(code) => write!(f, "{}", code),
 		}
 	}
@@ -91,7 +89,7 @@ impl fmt::Display for HandshakeError {
 impl Error for HandshakeError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
-			HandshakeError::IOError(e) => Some(e),
+			HandshakeError::TolliverError(e) => e.source(),
 			_ => None,
 		}
 	}
@@ -99,6 +97,12 @@ impl Error for HandshakeError {
 
 impl From<io::Error> for HandshakeError {
 	fn from(value: io::Error) -> Self {
-		HandshakeError::IOError(value)
+		HandshakeError::TolliverError(value.into())
+	}
+}
+
+impl From<TolliverError> for HandshakeError {
+	fn from(value: TolliverError) -> Self {
+		HandshakeError::TolliverError(value)
 	}
 }
