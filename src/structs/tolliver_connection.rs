@@ -5,7 +5,6 @@ use std::{
 };
 
 use prost::Message;
-use rusqlite::Connection;
 
 use crate::error::TolliverError;
 
@@ -22,8 +21,14 @@ pub struct TolliverConnection {
 
 impl TolliverConnection {
 	pub fn new(stream: TcpStream) -> rusqlite::Result<Self> {
-		let db = Connection::open(DB_PATH)?;
-		db.execute(
+		let db = rusqlite::Connection::open(DB_PATH)?;
+		Self::init_db(&db)?;
+		let conn = Self { stream, db };
+		Ok(conn)
+	}
+
+	fn init_db(db: &rusqlite::Connection) -> rusqlite::Result<()> {
+		let rows_updated = db.execute(
 			"
 CREATE TABLE IF NOT EXISTS message (
 	id     INTEGER PRIMARY KEY,
@@ -33,7 +38,8 @@ CREATE TABLE IF NOT EXISTS message (
 PRAGMA journal_mode=WAL;",
 			(),
 		)?;
-		Ok(Self { stream, db })
+		debug_assert!(rows_updated <= 1);
+		Ok(())
 	}
 
 	/// Receive one message from the connection
@@ -111,11 +117,80 @@ PRAGMA journal_mode=WAL;",
 		Ok(())
 	}
 
-	fn save_to_disk(&mut self, peer: String, body_buf: &Vec<u8>) -> Result<(), TolliverError> {
+	fn save_to_disk(&mut self, peer: String, body_buf: &Vec<u8>) -> rusqlite::Result<()> {
 		self.db.execute(
 			"INSERT INTO message (target, data) VALUES (?1, ?2)",
 			(peer, body_buf),
 		)?;
 		Ok(())
+	}
+
+	fn read_from_disk(&mut self, peer: String) -> rusqlite::Result<Vec<Vec<u8>>> {
+		let mut stmt = self
+			.db
+			.prepare("SELECT data FROM message WHERE target = ?1")?;
+		let body_bufs = stmt.query_map([peer], |r| r.get(0))?;
+		body_bufs.collect()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+
+	use std::net::{TcpListener, TcpStream};
+
+	use super::TolliverConnection;
+
+	fn setup_conn() -> TolliverConnection {
+		let db = rusqlite::Connection::open_in_memory().unwrap();
+		TolliverConnection::init_db(&db).unwrap();
+		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+		let listener_addr = listener.local_addr().unwrap();
+		let stream = TcpStream::connect(listener_addr).unwrap();
+
+		TolliverConnection { stream, db }
+	}
+
+	#[test]
+	fn single_read_write() {
+		let mut conn = setup_conn();
+
+		// Just some random bytes
+		let body_buf: Vec<u8> = vec![0, 8, 255, 42];
+		// Documentation address as per https://www.rfc-editor.org/rfc/rfc5737#section-3
+		let peer = "192.0.2.0:443";
+		conn.save_to_disk(peer.to_string(), &body_buf).unwrap();
+		let actual_body_bufs = conn.read_from_disk(peer.to_string()).unwrap();
+		assert_eq!(vec![body_buf], actual_body_bufs);
+	}
+
+	#[test]
+	fn multi_read_write() {
+		let mut conn = setup_conn();
+
+		// Just some random bytes
+		let body_buf: Vec<u8> = vec![0, 8, 255, 42];
+		let body_buf2: Vec<u8> = vec![99, 98, 97, 2, 1, 0];
+		// Documentation address as per https://www.rfc-editor.org/rfc/rfc5737#section-3
+		let peer = "192.0.2.0:443";
+		conn.save_to_disk(peer.to_string(), &body_buf).unwrap();
+		conn.save_to_disk(peer.to_string(), &body_buf2).unwrap();
+
+		let expected_body_bufs = vec![body_buf, body_buf2];
+		let actual_body_bufs = conn.read_from_disk(peer.to_string()).unwrap();
+		assert_eq!(expected_body_bufs, actual_body_bufs);
+	}
+
+	#[test]
+	fn empty_read_write() {
+		let mut conn = setup_conn();
+
+		// Just some random bytes
+		let body_buf: Vec<u8> = vec![];
+		// Documentation address as per https://www.rfc-editor.org/rfc/rfc5737#section-3
+		let peer = "192.0.2.0:443";
+		conn.save_to_disk(peer.to_string(), &body_buf).unwrap();
+		let actual_body_bufs = conn.read_from_disk(peer.to_string()).unwrap();
+		assert_eq!(vec![body_buf], actual_body_bufs);
 	}
 }
