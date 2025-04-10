@@ -12,12 +12,15 @@ use crate::{
 
 use super::{handshake::HandshakeCode, tolliver_connection::TolliverConnection};
 
+/// This is the struct that actually does the processing of requests that the
+/// server recieves. It implements [`Iterator`] over [`TolliverConnection`].
 pub struct Incoming<'a> {
 	pub listener: &'a TolliverServer,
 }
 
 impl<'a> Iterator for Incoming<'a> {
 	type Item = TolliverConnection;
+
 	fn next(&mut self) -> Option<Self::Item> {
 		let stream = self.listener.listener.accept().map(|p| p.0);
 		tcp_to_tolliver_connection(stream)

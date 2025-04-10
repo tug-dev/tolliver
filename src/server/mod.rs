@@ -13,7 +13,7 @@ impl TolliverServer {
 	///
 	/// # Errors
 	///
-	/// This function will return an error if the server cannot be started.
+	/// This function will return an [`io::Error`] if the server cannot be started.
 	pub fn bind() -> io::Result<Self> {
 		Self::bind_at("0.0.0.0:0")
 	}
@@ -22,7 +22,7 @@ impl TolliverServer {
 	///
 	/// # Errors
 	///
-	/// This function will return an error if the server cannot be started.
+	/// This function will return an [`io::Error`] if the server cannot be started.
 	pub fn bind_at<A>(addr: A) -> io::Result<Self>
 	where
 		A: net::ToSocketAddrs,
@@ -34,11 +34,12 @@ impl TolliverServer {
 		Ok(binded_data)
 	}
 
-	/// Starts a thread with the server on it.
+	/// Returns an iterator over the connections being received on this
+	/// server.
 	///
 	/// # Errors
 	///
-	/// Returns `None` if already running.
+	/// Iterator only stops (returns [`None`]) if an error occurs.
 	pub fn run(&self) -> Incoming<'_> {
 		Incoming { listener: self }
 	}
