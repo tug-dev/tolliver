@@ -5,11 +5,11 @@ edition = "2021"
 
 [dependencies]
 # Logging
-log = "0.4.27"
+log = "0.4"
 # ProtoBufs
-prost = "0.13.5"
+prost = "0.13"
 # SQL
-rusqlite = "0.34.0"
+rusqlite = "0.34"
 
 [build-dependencies]
-prost-build = "0.13.5"
+prost-build = "0.13"
