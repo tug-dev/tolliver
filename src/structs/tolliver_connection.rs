@@ -62,7 +62,7 @@ PRAGMA journal_mode=WAL;",
 
 	/// Sends a fast message with no deliverability guarantees. This attempts to
 	/// return as early as possible when it fails so something else can be tried.
-	pub fn fast_send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
+	pub fn unreliable_send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
 		// See protocol documentation for details
 		let body_length: u16 = match object.encoded_len().try_into() {
 			Ok(r) => r,

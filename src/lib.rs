@@ -64,7 +64,7 @@ mod tests {
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, TEMP_API_KEY).unwrap();
-			conn.fast_send(&shirt).unwrap();
+			conn.unreliable_send(&shirt).unwrap();
 		});
 		for mut connection in incoming {
 			assert_eq!(expected_shirt, connection.read().unwrap());
@@ -90,11 +90,11 @@ mod tests {
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, TEMP_API_KEY).unwrap();
-			conn.fast_send(&red_shirt).unwrap();
-			conn.fast_send(&blue_shirt).unwrap();
-			conn.fast_send(&red_shirt).unwrap();
-			conn.fast_send(&red_shirt).unwrap();
-			conn.fast_send(&blue_shirt).unwrap();
+			conn.unreliable_send(&red_shirt).unwrap();
+			conn.unreliable_send(&blue_shirt).unwrap();
+			conn.unreliable_send(&red_shirt).unwrap();
+			conn.unreliable_send(&red_shirt).unwrap();
+			conn.unreliable_send(&blue_shirt).unwrap();
 		});
 		for mut connection in incoming {
 			assert_eq!(expected_red_shirt, connection.read().unwrap());
