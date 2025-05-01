@@ -5,6 +5,10 @@
 
 A message passing Rust library for sending both fast messages and those that require deliverability guarantees.
 
+## CLI
+
+For more information on the interactive CLI see [docs/cli.md](docs/cli.md).
+
 
 ## Protocol
 
