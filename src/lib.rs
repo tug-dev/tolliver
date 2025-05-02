@@ -22,19 +22,16 @@ const HANDSHAKE_CODE_LENGTH: usize = 1;
 // TODO Use env var
 const TEMP_API_KEY: [u8; API_KEY_LENGTH] = [0; API_KEY_LENGTH];
 
-pub mod snazzy {
-	pub mod items {
-		include!(concat!(env!("OUT_DIR"), "/snazzy.items.rs"));
-	}
-}
-
 #[cfg(test)]
 mod tests {
+	mod items {
+		include!(concat!(env!("OUT_DIR"), "/snazzy.items.rs"));
+	}
+
 	use core::panic;
 	use std::thread;
 
 	use server::TolliverServer;
-	use snazzy::items;
 
 	use super::*;
 
