@@ -1,6 +1,8 @@
 use std::io::{stdin, stdout, Write};
 
-use cli::{parser::parse_function, type_parsing::hex_string_to_bytes};
+use cli::{
+	parser::parse_function, send::handle_send, structs::Function, type_parsing::hex_string_to_bytes,
+};
 use tolliver::{client::connect, structs::tolliver_connection::TolliverConnection};
 
 mod cli;
@@ -26,6 +28,7 @@ fn main() {
 		match function.name.as_str() {
 			"q" => return,
 			"connect" => handle_connection(function, &mut connections),
+			"send" => handle_send(function, &mut connections),
 			other => {
 				println!("Unknown command: {other}")
 			}
@@ -33,7 +36,7 @@ fn main() {
 	}
 }
 
-fn handle_connection(function: cli::parser::Function, connections: &mut Vec<TolliverConnection>) {
+fn handle_connection(function: Function, connections: &mut Vec<TolliverConnection>) {
 	let (addr, api_key_string) = match (function.args.get(0), function.args.get(1)) {
 		(Some(addr), Some(api_key)) => (addr, api_key),
 		_ => {

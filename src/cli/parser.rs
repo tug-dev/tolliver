@@ -1,10 +1,6 @@
 use std::{fmt::Display, str::Chars};
 
-#[derive(Debug)]
-pub struct Function {
-	pub name: String,
-	pub args: Vec<String>,
-}
+use super::structs::Function;
 
 pub struct CLIError {
 	pub message: String,
