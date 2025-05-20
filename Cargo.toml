@@ -1,15 +1,3 @@
-[package]
-name = "tolliver"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-# Logging
-log = "0.4"
-# ProtoBufs
-prost = "0.13"
-# SQL
-rusqlite = "0.34"
-
-[build-dependencies]
-prost-build = "0.13"
+[workspace]
+resolver = "3"
+members = ["tolliver", "tolliver-cli"]

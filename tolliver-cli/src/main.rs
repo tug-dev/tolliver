@@ -1,11 +1,15 @@
 use std::io::{stdin, stdout, Write};
 
-use cli::{
-	parser::parse_function, send::handle_send, structs::Function, type_parsing::hex_string_to_bytes,
-};
+use parser::parse_function;
+use send::handle_send;
+use structs::Function;
 use tolliver::{client::connect, structs::tolliver_connection::TolliverConnection};
+use type_parsing::hex_string_to_bytes;
 
-mod cli;
+pub mod parser;
+pub mod send;
+pub mod structs;
+pub mod type_parsing;
 
 fn main() {
 	let mut connections = Vec::new();

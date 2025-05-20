@@ -48,7 +48,7 @@ fn hex_to_number(character: char) -> Option<u8> {
 
 #[cfg(test)]
 mod hex_string_tests {
-	use crate::cli::type_parsing::hex_string_to_bytes;
+	use crate::type_parsing::hex_string_to_bytes;
 
 	#[test]
 	fn single_byte() {
