@@ -1,12 +1,14 @@
 use std::io::{stdin, stdout, Write};
 
 use parser::parse_function;
+use receive::handle_receive;
 use send::handle_send;
 use structs::Function;
 use tolliver::{client::connect, structs::tolliver_connection::TolliverConnection};
 use type_parsing::hex_string_to_bytes;
 
 pub mod parser;
+pub mod receive;
 pub mod send;
 pub mod structs;
 pub mod type_parsing;
@@ -33,6 +35,7 @@ fn main() {
 			"q" => return,
 			"connect" => handle_connection(function, &mut connections),
 			"send" => handle_send(function, &mut connections),
+			"receive" => handle_receive(function, &mut connections),
 			other => {
 				println!("Unknown command: {other}")
 			}

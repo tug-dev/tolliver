@@ -6,10 +6,9 @@ edition = "2021"
 [dependencies]
 # Tolliver (obviously)
 tolliver = { path = "../tolliver" }
-# Logging
-log = "0.4"
-# ProtoBufs
-prost = "0.13"
+# ProtoBufs (using this instead of prost because it supports reflection)
+protobuf = "3.7"
 
 [build-dependencies]
-prost-build = "0.13"
+protobuf-codegen = "3.7"
+

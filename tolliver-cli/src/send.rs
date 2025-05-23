@@ -3,7 +3,7 @@ use tolliver::structs::tolliver_connection::TolliverConnection;
 use super::structs::Function;
 
 mod items {
-	include!(concat!(env!("OUT_DIR"), "/snazzy.items.rs"));
+	include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
 }
 
 pub fn handle_send(function: Function, _connections: &mut Vec<TolliverConnection>) {
