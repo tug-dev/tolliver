@@ -63,36 +63,48 @@ PRAGMA journal_mode=WAL;",
 	/// Sends a fast message with no deliverability guarantees. This attempts to
 	/// return as early as possible when it fails so something else can be tried.
 	pub fn unreliable_send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
-		// See protocol documentation for details
-		let body_length: u16 = match object.encoded_len().try_into() {
-			Ok(r) => r,
-			Err(_) => {
-				return Err(TolliverError::TolliverError(
-					"Could not encode length into u16, most likely object is too large".to_string(),
-				))
-			}
-		};
+		let body_bytes = Self::message_to_bytes(object);
+		self.unreliable_send_bytes(body_bytes)
+	}
 
-		let total_length = BODY_LENGTH_LENGTH + body_length as usize;
-		let mut buf = Vec::with_capacity(total_length);
-
-		let body_length_bytes = body_length.to_be_bytes();
-		debug_assert_eq!(body_length_bytes.len(), BODY_LENGTH_LENGTH);
-		buf.extend(body_length_bytes);
-
-		let mut body_buf = Vec::with_capacity(body_length.into());
-		// Unwrap is safe, since we have reserved sufficient capacity in the vector.
-		object.encode(&mut body_buf).unwrap();
-		buf.extend(body_buf);
-		self.stream.write_all(&buf)?;
+	fn unreliable_send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
+		let message = Self::body_to_tolliver_message(bytes)?;
+		self.stream.write_all(&message)?;
 		Ok(())
 	}
 
 	/// Sends a durable message to the peer. This returns when the message has
 	/// been written to disk and is guaranteed to be delivered at some point.
 	pub fn send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
-		// See protocol documentation for details
-		let body_length: u16 = match object.encoded_len().try_into() {
+		let body_bytes = Self::message_to_bytes(object);
+		self.send_bytes(body_bytes)
+	}
+
+	fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
+		let peer = self.stream.peer_addr()?;
+		let message_bytes = Self::body_to_tolliver_message(bytes)?;
+		let id = self.save_to_disk(peer.to_string(), &message_bytes)?;
+		let unsent_message = UnsentMessage {
+			id,
+			peer: peer.to_string(),
+			message_bytes,
+		};
+		self.complete_send(unsent_message)?;
+		Ok(())
+	}
+
+	/// Given the bytes of the encoded ProtoBuf message, this functon adds the
+	/// required data to turn it into a Tolliver message ready to be sent over TCP
+	/// or written to disk.
+	///
+	/// For details, see the Tolliver protocol documentation.
+	fn body_to_tolliver_message(body: Vec<u8>) -> Result<Vec<u8>, TolliverError> {
+		// This length check can be done before encoding the ProtoBuf but we also
+		// need to check the length if the *_bytes functions are used. The only
+		// benefit of doing it before would be for it to return an error slightly
+		// faster in the failing case but that would only happen if the ProtoBuf
+		// was ~4.254 x 10^22 petabytes so very rarely, if ever, triggered.
+		let body_length: u16 = match body.len().try_into() {
 			Ok(r) => r,
 			Err(_) => {
 				return Err(TolliverError::TolliverError(
@@ -101,12 +113,6 @@ PRAGMA journal_mode=WAL;",
 			}
 		};
 
-		let mut body_buf = Vec::with_capacity(body_length.into());
-		// Unwrap is safe, since we have reserved sufficient capacity in the vector.
-		object.encode(&mut body_buf).unwrap();
-
-		let peer = self.stream.peer_addr()?;
-
 		let total_length = BODY_LENGTH_LENGTH + body_length as usize;
 		let mut buf = Vec::with_capacity(total_length);
 
@@ -114,19 +120,19 @@ PRAGMA journal_mode=WAL;",
 		debug_assert_eq!(body_length_bytes.len(), BODY_LENGTH_LENGTH);
 		buf.extend(body_length_bytes);
 
-		buf.extend(body_buf);
-		let id = self.save_to_disk(peer.to_string(), &buf)?;
-		let message = UnsentMessage {
-			id,
-			peer: peer.to_string(),
-			message: buf,
-		};
-		self.complete_send(message)?;
-		Ok(())
+		buf.extend(body);
+		Ok(buf)
+	}
+
+	fn message_to_bytes(object: &impl Message) -> Vec<u8> {
+		let mut body_bytes = Vec::with_capacity(object.encoded_len());
+		// Unwrap is safe, since we have reserved sufficient capacity in the vector.
+		object.encode(&mut body_bytes).unwrap();
+		body_bytes
 	}
 
 	fn complete_send(&mut self, message: UnsentMessage) -> Result<(), TolliverError> {
-		self.stream.write_all(&message.message)?;
+		self.stream.write_all(&message.message_bytes)?;
 		self.delete_from_disk(message.id)?;
 		Ok(())
 	}
@@ -164,7 +170,7 @@ PRAGMA journal_mode=WAL;",
 			Ok(UnsentMessage {
 				id: r.get(0)?,
 				peer: r.get(1)?,
-				message: r.get(2)?,
+				message_bytes: r.get(2)?,
 			})
 		})?;
 		body_bufs.collect()
@@ -176,7 +182,7 @@ PRAGMA journal_mode=WAL;",
 struct UnsentMessage {
 	id: i32,
 	peer: String,
-	message: Vec<u8>,
+	message_bytes: Vec<u8>,
 }
 
 #[cfg(test)]
@@ -211,7 +217,7 @@ mod tests {
 		let expected_body_bufs = vec![UnsentMessage {
 			id: 1,
 			peer: peer.to_string(),
-			message: body_buf,
+			message_bytes: body_buf,
 		}];
 		let actual_body_bufs = conn.read_from_disk().unwrap();
 		assert_eq!(expected_body_bufs, actual_body_bufs);
@@ -233,12 +239,12 @@ mod tests {
 			UnsentMessage {
 				id: 1,
 				peer: peer.to_string(),
-				message: body_buf,
+				message_bytes: body_buf,
 			},
 			UnsentMessage {
 				id: 2,
 				peer: peer.to_string(),
-				message: body_buf2,
+				message_bytes: body_buf2,
 			},
 		];
 		let actual_body_bufs = conn.read_from_disk().unwrap();
@@ -258,7 +264,7 @@ mod tests {
 		let expected_body_bufs = vec![UnsentMessage {
 			id: 1,
 			peer: peer.to_string(),
-			message: body_buf,
+			message_bytes: body_buf,
 		}];
 		let actual_body_bufs = conn.read_from_disk().unwrap();
 		assert_eq!(expected_body_bufs, actual_body_bufs);
