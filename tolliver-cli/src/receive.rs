@@ -6,7 +6,7 @@ mod items {
 	include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
 }
 
-pub fn handle_receive(function: Function, _connections: &mut Vec<TolliverConnection>) {
+pub fn handle_receive(function: Function, connection: &mut TolliverConnection) {
 	let _message_name = match function.args.get(0) {
 		Some(message_name) => message_name,
 		_ => {
@@ -14,6 +14,11 @@ pub fn handle_receive(function: Function, _connections: &mut Vec<TolliverConnect
 			return;
 		}
 	};
-	//TODO Implement receive
-	eprintln!("Receive not yet implemented.")
+	//TODO Parse the protobuf instead of reading bytes
+	match connection.read_bytes() {
+		Ok(bytes) => println!("Bytes: {:?}", bytes),
+		Err(e) => {
+			eprintln!("Could not read message: {e}")
+		}
+	}
 }

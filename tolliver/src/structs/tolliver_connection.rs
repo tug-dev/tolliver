@@ -51,13 +51,18 @@ PRAGMA journal_mode=WAL;",
 		T: Message,
 		T: Default + Debug + Send + Sync,
 	{
+		let body_buf = self.read_bytes()?;
+		let message = Message::decode(&mut &body_buf[..]).unwrap();
+		Ok(message)
+	}
+
+	pub fn read_bytes(&mut self) -> Result<Vec<u8>, io::Error> {
 		let mut body_length_buf = [0; BODY_LENGTH_LENGTH];
 		self.stream.read_exact(&mut body_length_buf)?;
 		let body_length = BodyLengthType::from_be_bytes(body_length_buf);
 		let mut body_buf = vec![0; body_length.into()];
 		self.stream.read_exact(&mut body_buf)?;
-		let message = Message::decode(&mut &body_buf[..]).unwrap();
-		Ok(message)
+		Ok(body_buf)
 	}
 
 	/// Sends a fast message with no deliverability guarantees. This attempts to
@@ -67,7 +72,7 @@ PRAGMA journal_mode=WAL;",
 		self.unreliable_send_bytes(body_bytes)
 	}
 
-	fn unreliable_send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
+	pub fn unreliable_send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
 		let message = Self::body_to_tolliver_message(bytes)?;
 		self.stream.write_all(&message)?;
 		Ok(())
@@ -80,7 +85,7 @@ PRAGMA journal_mode=WAL;",
 		self.send_bytes(body_bytes)
 	}
 
-	fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
+	pub fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
 		let peer = self.stream.peer_addr()?;
 		let message_bytes = Self::body_to_tolliver_message(bytes)?;
 		let id = self.save_to_disk(peer.to_string(), &message_bytes)?;

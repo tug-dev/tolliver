@@ -1,10 +1,16 @@
-use std::io::{stdin, stdout, Write};
+use std::{
+	io::{stdin, stdout, Write},
+	sync::{Arc, Mutex},
+	thread,
+};
 
 use parser::parse_function;
 use receive::handle_receive;
 use send::handle_send;
 use structs::Function;
-use tolliver::{client::connect, structs::tolliver_connection::TolliverConnection};
+use tolliver::{
+	client::connect, server::TolliverServer, structs::tolliver_connection::TolliverConnection,
+};
 use type_parsing::hex_string_to_bytes;
 
 pub mod parser;
@@ -14,7 +20,7 @@ pub mod structs;
 pub mod type_parsing;
 
 fn main() {
-	let mut connections = Vec::new();
+	let connections = Arc::new(Mutex::new(Vec::new()));
 	println!("Tolliver repl:");
 	loop {
 		print!(">>> ");
@@ -33,9 +39,12 @@ fn main() {
 		println!("{:?}", function);
 		match function.name.as_str() {
 			"q" => return,
-			"connect" => handle_connection(function, &mut connections),
-			"send" => handle_send(function, &mut connections),
-			"receive" => handle_receive(function, &mut connections),
+			"connect" => handle_connection(function, &mut connections.lock().unwrap()),
+			"send" => handle_send(function, connections.lock().unwrap().get_mut(0).unwrap()),
+			"start" => {
+				handle_server_start(function, connections.clone());
+			}
+			"receive" => handle_receive(function, connections.lock().unwrap().get_mut(0).unwrap()),
 			other => {
 				println!("Unknown command: {other}")
 			}
@@ -74,6 +83,35 @@ fn handle_connection(function: Function, connections: &mut Vec<TolliverConnectio
 	};
 	connections.push(connection);
 	println!("Connection established!")
+}
+
+/// Starts a Tolliver server and returns a join handle to the thread where it
+/// is running.
+fn handle_server_start(
+	function: Function,
+	connections: Arc<Mutex<Vec<TolliverConnection>>>,
+) -> Option<thread::JoinHandle<()>> {
+	let server_result = match function.args.first() {
+		Some(addr) => TolliverServer::bind_at(addr),
+		None => TolliverServer::bind(),
+	};
+	let server = match server_result {
+		Ok(res) => res,
+		Err(e) => {
+			eprintln!("Error when binding to address: {e}");
+			return None;
+		}
+	};
+	println!(
+		"Server started at {}",
+		server.listener.local_addr().unwrap()
+	);
+	let handle = thread::spawn(move || {
+		for conn in server.run() {
+			connections.lock().unwrap().push(conn);
+		}
+	});
+	Some(handle)
 }
 
 fn get_user_input() -> String {
