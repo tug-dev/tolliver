@@ -491,6 +491,7 @@ version = "0.1.0"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
+ "protobuf-parse",
  "tolliver",
 ]
 

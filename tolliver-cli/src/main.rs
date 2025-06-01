@@ -36,7 +36,6 @@ fn main() {
 				continue;
 			}
 		};
-		println!("{:?}", function);
 		match function.name.as_str() {
 			"q" => return,
 			"connect" => handle_connection(function, &mut connections.lock().unwrap()),
