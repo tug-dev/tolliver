@@ -5,12 +5,18 @@ If you run:
 cargo run
 ```
 
-Then the Tolliver CLI will start, which lets you connect to Tolliver programs in an interactive way. To connect to `127.0.0.1:8888` for example, start with:
+Then the Tolliver CLI will start, which lets you interact with Tolliver programs. To start a server at `127.0.0.1:8888` do:
 ```tolliver
-connect 127.0.0.1:8888 0000000000000000000000000000000000000000000000000000000000000000
+start 127.0.0.1:8888
 ```
 
-and then to send a message do something like:
+Now if you run the CLI in a different terminal, you can connect to it and send a message:
 ```tolliver
-send src/proto_files/items.proto (let ((color red) (size 1)))
+connect 127.0.0.1:8888 0000000000000000000000000000000000000000000000000000000000000000
+send proto_files/items.proto Shirt color: "Red" size: LARGE
+```
+
+If we switch back to the server, we can receive the message sent:
+```tolliver
+receive proto_files/items.proto Shirt
 ```

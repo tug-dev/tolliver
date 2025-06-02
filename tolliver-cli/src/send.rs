@@ -1,3 +1,4 @@
+use items::items::shirt::Size;
 use protobuf::Message;
 use tolliver::structs::tolliver_connection::TolliverConnection;
 
@@ -18,6 +19,7 @@ pub fn handle_send(function: Function, connection: &mut TolliverConnection) {
 	//TODO Actually send the message the user entered
 	let mut shirt = items::items::Shirt::new();
 	shirt.color = "Red".to_string();
+	shirt.size = Size::LARGE.into();
 	let bytes = shirt.write_to_bytes().unwrap();
 	match connection.send_bytes(bytes) {
 		Ok(()) => println!("Message sent"),
