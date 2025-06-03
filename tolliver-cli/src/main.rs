@@ -13,6 +13,7 @@ use tolliver::{
 };
 use type_parsing::hex_string_to_bytes;
 
+pub mod dynamic_proto;
 pub mod parser;
 pub mod receive;
 pub mod send;
