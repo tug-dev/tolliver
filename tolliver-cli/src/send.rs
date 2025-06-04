@@ -4,10 +4,6 @@ use crate::dynamic_proto::message_from_proto_file;
 
 use super::structs::Function;
 
-mod items {
-	include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
-}
-
 pub fn handle_send(function: Function, connection: &mut TolliverConnection) {
 	let (proto_path, message_name) = match (function.args.get(0), function.args.get(1)) {
 		(Some(path), Some(name)) => (path, name),

@@ -4,10 +4,6 @@ use crate::dynamic_proto::message_from_proto_file;
 
 use super::structs::Function;
 
-mod items {
-	include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
-}
-
 pub fn handle_receive(function: Function, connection: &mut TolliverConnection) {
 	let bytes = match connection.read_bytes() {
 		Ok(bytes) => bytes,

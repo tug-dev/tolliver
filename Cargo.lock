@@ -302,21 +302,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "protobuf-codegen"
-version = "3.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d3976825c0014bbd2f3b34f0001876604fe87e0c86cd8fa54251530f1544ace"
-dependencies = [
- "anyhow",
- "once_cell",
- "protobuf",
- "protobuf-parse",
- "regex",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "protobuf-parse"
 version = "3.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -490,7 +475,6 @@ name = "tolliver-cli"
 version = "0.1.0"
 dependencies = [
  "protobuf",
- "protobuf-codegen",
  "protobuf-parse",
  "tolliver",
 ]

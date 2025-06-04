@@ -10,6 +10,3 @@ tolliver = { path = "../tolliver" }
 protobuf = "3.7"
 protobuf-parse = "3.7"
 
-[build-dependencies]
-protobuf-codegen = "3.7"
-
