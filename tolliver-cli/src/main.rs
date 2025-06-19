@@ -6,7 +6,7 @@ use std::{
 
 use parser::parse_function;
 use receive::handle_receive;
-use send::handle_send;
+use send::{handle_id_send, handle_send};
 use structs::Function;
 use tolliver::{
 	client::connect, server::TolliverServer, structs::tolliver_connection::TolliverConnection,
@@ -41,6 +41,7 @@ fn main() {
 			"q" => return,
 			"connect" => handle_connection(function, &mut connections.lock().unwrap()),
 			"send" => handle_send(function, connections.lock().unwrap().get_mut(0).unwrap()),
+			"id_send" => handle_id_send(function, connections.lock().unwrap().get_mut(0).unwrap()),
 			"start" => {
 				handle_server_start(function, connections.clone());
 			}

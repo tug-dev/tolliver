@@ -26,6 +26,7 @@ Then the server replies in the following format:
 # Information messages
 
 ```
+4 bytes - big endian u32 of the id of the proto format of the message (therefore max of ~4.2 billion unique proto formats can be used)
 2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
 Rest of message - body encoded with protocol buffers
 ```

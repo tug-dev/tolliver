@@ -8,11 +8,20 @@ use prost::Message;
 
 use crate::error::TolliverError;
 
-type BodyLengthType = u16;
+pub type BodyLengthType = u16;
+pub type ProtoIdType = u32;
 
 /// The number of bytes the body length is encoded in
 const BODY_LENGTH_LENGTH: usize = 2;
+/// The number of bytes the body length is encoded in
+const PROTO_ID_LENGTH: usize = 4;
 const DB_PATH: &str = "tolliver.db";
+
+/// Compile time assertions
+const _: () = {
+	assert!(BodyLengthType::BITS == BODY_LENGTH_LENGTH as u32 * 8);
+	assert!(ProtoIdType::BITS == PROTO_ID_LENGTH as u32 * 8);
+};
 
 pub struct TolliverConnection {
 	pub stream: TcpStream,
@@ -45,49 +54,72 @@ PRAGMA journal_mode=WAL;",
 		Ok(())
 	}
 
-	/// Receive one message from the connection
-	pub fn read<T>(&mut self) -> io::Result<T>
+	/// Receive one message from the connection, returns a tuple containing the
+	/// message and the numerical id to identify what proto message the body of
+	/// the message was encoded with.
+	pub fn read<T>(&mut self) -> io::Result<(T, ProtoIdType)>
 	where
 		T: Message,
 		T: Default + Debug + Send + Sync,
 	{
-		let body_buf = self.read_bytes()?;
+		let (body_buf, proto_id) = self.read_bytes()?;
 		let message = Message::decode(&mut &body_buf[..]).unwrap();
-		Ok(message)
+		Ok((message, proto_id))
 	}
 
-	pub fn read_bytes(&mut self) -> Result<Vec<u8>, io::Error> {
+	pub fn read_bytes(&mut self) -> Result<(Vec<u8>, ProtoIdType), io::Error> {
+		let mut proto_id_buf = [0; PROTO_ID_LENGTH];
+		self.stream.read_exact(&mut proto_id_buf)?;
+		let proto_id = ProtoIdType::from_be_bytes(proto_id_buf);
+
 		let mut body_length_buf = [0; BODY_LENGTH_LENGTH];
 		self.stream.read_exact(&mut body_length_buf)?;
 		let body_length = BodyLengthType::from_be_bytes(body_length_buf);
+
 		let mut body_buf = vec![0; body_length.into()];
 		self.stream.read_exact(&mut body_buf)?;
-		Ok(body_buf)
+		Ok((body_buf, proto_id))
 	}
 
 	/// Sends a fast message with no deliverability guarantees. This attempts to
 	/// return as early as possible when it fails so something else can be tried.
-	pub fn unreliable_send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
+	pub fn unreliable_send(
+		&mut self,
+		proto_id: ProtoIdType,
+		object: &impl Message,
+	) -> Result<(), TolliverError> {
 		let body_bytes = Self::message_to_bytes(object);
-		self.unreliable_send_bytes(body_bytes)
+		self.unreliable_send_bytes(proto_id, body_bytes)
 	}
 
-	pub fn unreliable_send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
-		let message = Self::body_to_tolliver_message(bytes)?;
+	pub fn unreliable_send_bytes(
+		&mut self,
+		proto_id: ProtoIdType,
+		bytes: Vec<u8>,
+	) -> Result<(), TolliverError> {
+		let message = Self::body_to_tolliver_message(proto_id, bytes)?;
 		self.stream.write_all(&message)?;
 		Ok(())
 	}
 
 	/// Sends a durable message to the peer. This returns when the message has
 	/// been written to disk and is guaranteed to be delivered at some point.
-	pub fn send(&mut self, object: &impl Message) -> Result<(), TolliverError> {
+	pub fn send(
+		&mut self,
+		proto_id: ProtoIdType,
+		object: &impl Message,
+	) -> Result<(), TolliverError> {
 		let body_bytes = Self::message_to_bytes(object);
-		self.send_bytes(body_bytes)
+		self.send_bytes(proto_id, body_bytes)
 	}
 
-	pub fn send_bytes(&mut self, bytes: Vec<u8>) -> Result<(), TolliverError> {
+	pub fn send_bytes(
+		&mut self,
+		proto_id: ProtoIdType,
+		bytes: Vec<u8>,
+	) -> Result<(), TolliverError> {
 		let peer = self.stream.peer_addr()?;
-		let message_bytes = Self::body_to_tolliver_message(bytes)?;
+		let message_bytes = Self::body_to_tolliver_message(proto_id, bytes)?;
 		let id = self.save_to_disk(peer.to_string(), &message_bytes)?;
 		let unsent_message = UnsentMessage {
 			id,
@@ -103,27 +135,29 @@ PRAGMA journal_mode=WAL;",
 	/// or written to disk.
 	///
 	/// For details, see the Tolliver protocol documentation.
-	fn body_to_tolliver_message(body: Vec<u8>) -> Result<Vec<u8>, TolliverError> {
+	fn body_to_tolliver_message(
+		proto_id: ProtoIdType,
+		body: Vec<u8>,
+	) -> Result<Vec<u8>, TolliverError> {
 		// This length check can be done before encoding the ProtoBuf but we also
 		// need to check the length if the *_bytes functions are used. The only
 		// benefit of doing it before would be for it to return an error slightly
 		// faster in the failing case but that would only happen if the ProtoBuf
 		// was ~4.254 x 10^22 petabytes so very rarely, if ever, triggered.
-		let body_length: u16 = match body.len().try_into() {
-			Ok(r) => r,
-			Err(_) => {
-				return Err(TolliverError::TolliverError(
-					"Could not encode length into u16, most likely object is too large".to_string(),
-				))
-			}
-		};
+		let body_length: BodyLengthType =
+			match body.len().try_into() {
+				Ok(r) => r,
+				Err(_) => return Err(TolliverError::TolliverError(
+					"Could not encode length into BodyLengthType, most likely object is too large"
+						.to_string(),
+				)),
+			};
 
-		let total_length = BODY_LENGTH_LENGTH + body_length as usize;
+		let total_length = PROTO_ID_LENGTH + BODY_LENGTH_LENGTH + body_length as usize;
 		let mut buf = Vec::with_capacity(total_length);
 
-		let body_length_bytes = body_length.to_be_bytes();
-		debug_assert_eq!(body_length_bytes.len(), BODY_LENGTH_LENGTH);
-		buf.extend(body_length_bytes);
+		buf.extend(proto_id.to_be_bytes());
+		buf.extend(body_length.to_be_bytes());
 
 		buf.extend(body);
 		Ok(buf)

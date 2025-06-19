@@ -35,6 +35,8 @@ mod tests {
 
 	use super::*;
 
+	const EXAMPLE_PROTO_ID: u32 = 0;
+
 	#[test]
 	fn start_server() {
 		let server = TolliverServer::bind().unwrap();
@@ -54,14 +56,14 @@ mod tests {
 		let mut shirt = items::Shirt::default();
 		shirt.color = "Red".to_string();
 		shirt.set_size(items::shirt::Size::Large);
-		let expected_shirt = shirt.clone();
+		let expected_shirt = (shirt.clone(), 0);
 
 		let server = TolliverServer::bind().unwrap();
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, TEMP_API_KEY).unwrap();
-			conn.unreliable_send(&shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_PROTO_ID, &shirt).unwrap();
 		});
 		for mut connection in incoming {
 			assert_eq!(expected_shirt, connection.read().unwrap());
@@ -75,23 +77,23 @@ mod tests {
 		let mut red_shirt = items::Shirt::default();
 		red_shirt.color = "Red".to_string();
 		red_shirt.set_size(items::shirt::Size::Large);
-		let expected_red_shirt = red_shirt.clone();
+		let expected_red_shirt = (red_shirt.clone(), 0);
 
 		let mut blue_shirt = items::Shirt::default();
 		blue_shirt.color = "Blue".to_string();
 		blue_shirt.set_size(items::shirt::Size::Medium);
-		let expected_blue_shirt = blue_shirt.clone();
+		let expected_blue_shirt = (blue_shirt.clone(), 0);
 
 		let server = TolliverServer::bind().unwrap();
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, TEMP_API_KEY).unwrap();
-			conn.unreliable_send(&red_shirt).unwrap();
-			conn.unreliable_send(&blue_shirt).unwrap();
-			conn.unreliable_send(&red_shirt).unwrap();
-			conn.unreliable_send(&red_shirt).unwrap();
-			conn.unreliable_send(&blue_shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_PROTO_ID, &blue_shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_PROTO_ID, &blue_shirt).unwrap();
 		});
 		for mut connection in incoming {
 			assert_eq!(expected_red_shirt, connection.read().unwrap());

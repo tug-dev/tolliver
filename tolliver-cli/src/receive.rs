@@ -5,8 +5,8 @@ use crate::dynamic_proto::message_from_proto_file;
 use super::structs::Function;
 
 pub fn handle_receive(function: Function, connection: &mut TolliverConnection) {
-	let bytes = match connection.read_bytes() {
-		Ok(bytes) => bytes,
+	let (bytes, proto_id) = match connection.read_bytes() {
+		Ok(res) => res,
 		Err(e) => {
 			eprintln!("Could not read message: {e}");
 			return;
@@ -39,5 +39,6 @@ pub fn handle_receive(function: Function, connection: &mut TolliverConnection) {
 		}
 	};
 	let output = protobuf::text_format::print_to_string(&*message);
+	println!("Proto ID: {proto_id}");
 	println!("{output}");
 }
