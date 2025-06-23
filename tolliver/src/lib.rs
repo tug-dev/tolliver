@@ -56,7 +56,7 @@ mod tests {
 		let mut shirt = items::Shirt::default();
 		shirt.color = "Red".to_string();
 		shirt.set_size(items::shirt::Size::Large);
-		let expected_shirt = (shirt.clone(), 0);
+		let expected_shirt = shirt.clone();
 
 		let server = TolliverServer::bind().unwrap();
 		let incoming = server.run();
@@ -66,7 +66,7 @@ mod tests {
 			conn.unreliable_send(EXAMPLE_PROTO_ID, &shirt).unwrap();
 		});
 		for mut connection in incoming {
-			assert_eq!(expected_shirt, connection.read().unwrap());
+			assert_eq!(expected_shirt, connection.read().unwrap().read().unwrap());
 			return;
 		}
 		panic!("Incoming somehow ended")
@@ -77,12 +77,12 @@ mod tests {
 		let mut red_shirt = items::Shirt::default();
 		red_shirt.color = "Red".to_string();
 		red_shirt.set_size(items::shirt::Size::Large);
-		let expected_red_shirt = (red_shirt.clone(), 0);
+		let expected_red_shirt = red_shirt.clone();
 
 		let mut blue_shirt = items::Shirt::default();
 		blue_shirt.color = "Blue".to_string();
 		blue_shirt.set_size(items::shirt::Size::Medium);
-		let expected_blue_shirt = (blue_shirt.clone(), 0);
+		let expected_blue_shirt = blue_shirt.clone();
 
 		let server = TolliverServer::bind().unwrap();
 		let incoming = server.run();
@@ -96,11 +96,26 @@ mod tests {
 			conn.unreliable_send(EXAMPLE_PROTO_ID, &blue_shirt).unwrap();
 		});
 		for mut connection in incoming {
-			assert_eq!(expected_red_shirt, connection.read().unwrap());
-			assert_eq!(expected_blue_shirt, connection.read().unwrap());
-			assert_eq!(expected_red_shirt, connection.read().unwrap());
-			assert_eq!(expected_red_shirt, connection.read().unwrap());
-			assert_eq!(expected_blue_shirt, connection.read().unwrap());
+			assert_eq!(
+				expected_red_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_blue_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_red_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_red_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_blue_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
 			return;
 		}
 		panic!("Incoming somehow ended")

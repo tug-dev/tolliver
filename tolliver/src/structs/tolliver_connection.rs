@@ -8,6 +8,8 @@ use prost::Message;
 
 use crate::error::TolliverError;
 
+use super::read_message::ReadMessage;
+
 pub type BodyLengthType = u16;
 pub type ProtoIdType = u32;
 
@@ -57,17 +59,7 @@ PRAGMA journal_mode=WAL;",
 	/// Receive one message from the connection, returns a tuple containing the
 	/// message and the numerical id to identify what proto message the body of
 	/// the message was encoded with.
-	pub fn read<T>(&mut self) -> io::Result<(T, ProtoIdType)>
-	where
-		T: Message,
-		T: Default + Debug + Send + Sync,
-	{
-		let (body_buf, proto_id) = self.read_bytes()?;
-		let message = Message::decode(&mut &body_buf[..]).unwrap();
-		Ok((message, proto_id))
-	}
-
-	pub fn read_bytes(&mut self) -> Result<(Vec<u8>, ProtoIdType), io::Error> {
+	pub fn read(&mut self) -> io::Result<ReadMessage> {
 		let mut proto_id_buf = [0; PROTO_ID_LENGTH];
 		self.stream.read_exact(&mut proto_id_buf)?;
 		let proto_id = ProtoIdType::from_be_bytes(proto_id_buf);
@@ -78,7 +70,12 @@ PRAGMA journal_mode=WAL;",
 
 		let mut body_buf = vec![0; body_length.into()];
 		self.stream.read_exact(&mut body_buf)?;
-		Ok((body_buf, proto_id))
+
+		let message = ReadMessage {
+			proto_id,
+			body: body_buf,
+		};
+		Ok(message)
 	}
 
 	/// Sends a fast message with no deliverability guarantees. This attempts to
