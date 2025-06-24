@@ -59,6 +59,11 @@ PRAGMA journal_mode=WAL;",
 	/// Receive one message from the connection, returns a tuple containing the
 	/// message and the numerical id to identify what proto message the body of
 	/// the message was encoded with.
+	///
+	/// # Errors
+	///
+	/// This function will return an error only if there is a problem reading
+	/// bytes from the stream.
 	pub fn read(&mut self) -> io::Result<ReadMessage> {
 		let mut proto_id_buf = [0; PROTO_ID_LENGTH];
 		self.stream.read_exact(&mut proto_id_buf)?;
