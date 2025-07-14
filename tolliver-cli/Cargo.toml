@@ -7,6 +7,6 @@ edition = "2021"
 # Tolliver (obviously)
 tolliver = { path = "../tolliver" }
 # ProtoBufs (using this instead of prost because it supports reflection)
-protobuf = "3.7"
-protobuf-parse = "3.7"
+protobuf = "3.7.2"
+protobuf-parse = "3.7.2"
 
