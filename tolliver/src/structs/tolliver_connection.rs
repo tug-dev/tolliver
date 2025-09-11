@@ -42,14 +42,14 @@ impl TolliverConnection {
 	}
 
 	fn init_db(db: &rusqlite::Connection) -> rusqlite::Result<()> {
+		db.pragma_update(None, "journal_mode", &"WAL")?;
 		let rows_updated = db.execute(
 			"
 CREATE TABLE IF NOT EXISTS message (
 	id     INTEGER PRIMARY KEY,
 	target TEXT,
 	data   BLOB
-);
-PRAGMA journal_mode=WAL;",
+)",
 			(),
 		)?;
 		debug_assert!(rows_updated <= 1);
