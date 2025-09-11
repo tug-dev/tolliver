@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::structs::incoming::Incoming;
 use std::{
 	io,
@@ -41,6 +43,11 @@ impl TolliverServer {
 	///
 	/// Iterator only stops (returns [`None`]) if an error occurs.
 	pub fn run(&self) -> Incoming<'_> {
+		let addr = match self.listener.local_addr() {
+			Ok(res) => res.to_string(),
+			Err(_) => "unknown address".to_string(),
+		};
+		info!("Tolliver server started at {addr}");
 		Incoming { listener: self }
 	}
 }
