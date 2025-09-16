@@ -1,2 +1,4 @@
-/target
+/rust/target
 tolliver.db
+tolliver.db-shm
+tolliver.db-wal
