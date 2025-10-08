@@ -1,20 +1,60 @@
-# Initial handshake
+# Tolliver Protocol Version 1
 
-The server and the client first establish a TCP socket between them, after which the client sends a hello message that authenticates it and has information about it's version. The client sends a message in the following format:
+## Messages
+
+### Initial handshake
+
+The server and the client first establish a TCP socket between them, after which the client sends a hello message that authenticates it and has information about it's version. For this to be sent in a single TCP segment it should be below 536 bytes (or 1448 bytes, haven't figured out which yet). The client sends a message in the following format:
 
 ```
-2 bytes - big endian u16 of client version (max version is therefore 65536)
+8 bytes - big endian u64 of client version (max version is therefore 2^64)
 32 bytes - 256-bit api key
 ```
 
 Then the server replies in the following format:
 
 ```
-1 byte - handshake (success/error) code, with a 0 corresponding with success while 1-255 being an error.
-2 bytes - big endian u16 of server version
+1 byte - handshake status code, with a 0 corresponding with success while 1-255 being an error.
+8 bytes - big endian u64 of server version
 ```
 
-## Server handshake codes
+### Subscription message
+
+```
+1 byte - message type, for subscription this is 1
+8 bytes - big endian u64 of a channel the client wants to subscribe to
+```
+
+### Subscription response
+
+```
+1 byte - message type, for subscription response this is 2
+1 bytes - the channel subscription status code
+```
+
+### Information message
+
+```
+1 byte - message type, for info message this is 3
+8 bytes - big endian u64 of the id of the proto format of the message (therefore max of ~1.8 x 10^19 unique proto formats can be used)
+2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
+Rest of message - body encoded with protocol buffers
+```
+
+### Information message response
+
+```
+1 byte - message type, for info message response this is 4
+1 byte - information message response status code
+---Everything beyond this is only included if the status code is 1---
+8 bytes - big endian u64 of the id of the proto format of the message (therefore max of ~1.8 x 10^19 unique proto formats can be used)
+2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
+Rest of message - body encoded with protocol buffers
+```
+
+## Status codes
+
+### Handshake status codes
 
 ```
 0 - Success
@@ -23,14 +63,21 @@ Then the server replies in the following format:
 3 - Unauthorized
 ```
 
-# Information messages
+### Channel subscription status codes
 
 ```
-4 bytes - big endian u32 of the id of the proto format of the message (therefore max of ~4.2 billion unique proto formats can be used)
-2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
-Rest of message - body encoded with protocol buffers
+0 - Success
+1 - General error
+2 - Unauthorized
 ```
 
-# Versioning
+### Information message status codes
+```
+0 - Success
+1 - Success with aditional information
+2 - General error
+```
+
+## Versioning
 
 The Tolliver client and server versions are always kept in sync. While the version code is 0, the protocol may change at any time without warning.
