@@ -18,17 +18,33 @@ Then the server replies in the following format:
 8 bytes - big endian u64 of server version
 ```
 
-### Subscription message
+### Channel subscription message
 
 ```
 1 byte - message type, for subscription this is 1
-8 bytes - big endian u64 of a channel the client wants to subscribe to
+4 bytes - big endian u32 of the number of bytes the channel string is
+Rest of message - UTF-8 encoded string of the channel name
 ```
 
 ### Subscription response
 
 ```
 1 byte - message type, for subscription response this is 2
+1 bytes - the channel subscription status code
+```
+
+### Channel unsubscription message
+
+```
+1 byte - message type, for unsubscription this is 3
+4 bytes - big endian u32 of the number of bytes the channel string is
+Rest of message - UTF-8 encoded string of the channel name
+```
+
+### Unsubscription response
+
+```
+1 byte - message type, for unsubscription response this is 4
 1 bytes - the channel subscription status code
 ```
 

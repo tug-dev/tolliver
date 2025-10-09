@@ -1,7 +1,7 @@
 # Tolliver
 
 > [!WARNING]
-> This library is work in progress and anything can change at any time. Including the endianness of the version number encoding.
+> This library is work in progress and anything can change at any time.
 
 A message passing Rust library for sending both fast messages and those that require deliverability guarantees.
 
