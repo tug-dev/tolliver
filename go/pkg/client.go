@@ -1,16 +1,54 @@
 package tolliver
 
-// import "crypto/x509"
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"strconv"
+)
+
+type ConnectionWrapper struct {
+	Connection *tls.Conn
+	Hostname   string
+	Port       int
+}
 
 type Client struct {
+	ConnectionPool []ConnectionWrapper
 }
 
 func (c *Client) NewConnection(addr ConnectionAddr) {
+	caPool := x509.NewCertPool()
+	caPool.AddCert(addr.CA)
 
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{*addr.ClientCert},
+		RootCAs:      caPool,
+		ServerName:   addr.Host,
+	}
+
+	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	c.ConnectionPool = append(c.ConnectionPool, ConnectionWrapper{
+		Connection: conn,
+		Hostname:   addr.Host,
+		Port:       addr.Port,
+	})
 }
 
 func (c *Client) EndConnection(addr ConnectionAddr) {
+	for i, v := range c.ConnectionPool {
+		if v.Hostname == addr.Host && v.Port == addr.Port {
+			// Potentially need to do some tear down here
+			v.Connection.Close()
 
+			c.ConnectionPool[i] = c.ConnectionPool[len(c.ConnectionPool)-1]
+			c.ConnectionPool = c.ConnectionPool[:len(c.ConnectionPool)-1]
+			return
+		}
+	}
 }
 
 func (c *Client) Subscribe(channel Channel) {

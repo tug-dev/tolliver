@@ -1,6 +1,7 @@
 package tolliver
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"time"
 )
@@ -10,7 +11,7 @@ type ConnectionAddr struct {
 	Host       string
 	Port       int
 	CA         *x509.Certificate
-	ClientCert *x509.Certificate
+	ClientCert *tls.Certificate
 }
 
 // The options for creating a new client
