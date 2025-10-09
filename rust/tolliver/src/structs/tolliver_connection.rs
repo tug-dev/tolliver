@@ -11,12 +11,12 @@ use crate::error::TolliverError;
 use super::read_message::ReadMessage;
 
 pub type BodyLengthType = u16;
-pub type ProtoIdType = u32;
+pub type ProtoIdType = u64;
 
 /// The number of bytes the body length is encoded in
 const BODY_LENGTH_LENGTH: usize = 2;
 /// The number of bytes the body length is encoded in
-const PROTO_ID_LENGTH: usize = 4;
+const PROTO_ID_LENGTH: usize = 8;
 const DB_PATH: &str = "tolliver.db";
 
 /// Compile time assertions
