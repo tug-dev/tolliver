@@ -1,10 +1,23 @@
 # Tolliver Protocol Version 1
 
+## Overview
+
+Tolliver provides two key features:
+- Messages which are guaranteed to deliver eventually
+- Organising the sending and receiving of messages by channels (a broad type of message e.g. vm-shutdown) and keys (specific identifiers - a sparkler node id). Messages are published to a channel or key or both and similarly handlers on incoming messages are registered by these categories.
+
+It is likely that each message channel will only contain data which is of a specific proto buf type, however this is not to be enforced by Tolliver.
+
 ## Messages
 
 ### Initial handshake
 
 The server and the client first establish a TCP socket between them, after which the client sends a hello message that authenticates it and has information about it's version. For this to be sent in a single TCP segment it should be below 536 bytes (or 1448 bytes, haven't figured out which yet). The client sends a message in the following format:
+
+<!-- Is there any problem with the handshake being over multiple TCP/TLS segments? -->
+<!---->
+<!-- Given we are using TLS forgo API key and send the client UUID in the handshake? -->
+<!-- Also add the subscriptions that are wanted -->
 
 ```
 8 bytes - big endian u64 of client version (max version is therefore 2^64)
@@ -12,6 +25,8 @@ The server and the client first establish a TCP socket between them, after which
 ```
 
 Then the server replies in the following format:
+
+<!-- Again include server UUID -->
 
 ```
 1 byte - handshake status code, with a 0 corresponding with success while 1-255 being an error.
@@ -26,6 +41,7 @@ Then the server replies in the following format:
 Rest of message - UTF-8 encoded string of the channel name
 ```
 
+<!-- Potentially include the channel name in the acknowledgement in the case that a client tried to subscribe to multiple channels. -->
 ### Subscription response
 
 ```
@@ -48,7 +64,11 @@ Rest of message - UTF-8 encoded string of the channel name
 1 bytes - the channel subscription status code
 ```
 
+<!-- Add in messages for subscription to all messages with a given key and a message and key packet. -->
+
 ### Information message
+
+<!-- Remove the proto format id and add a message identifier? -->
 
 ```
 1 byte - message type, for info message this is 3
