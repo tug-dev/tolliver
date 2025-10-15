@@ -1,9 +1,9 @@
 package tolliver
 
 import (
-	// "crypto/tls"
-	// "crypto/x509"
-	// "errors"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"time"
 )
 
@@ -18,24 +18,24 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 		make([]ConnectionWrapper, InitialConnectionCapacity),
 		options.Timeout,
 		nil,
-		// nil,
+		nil,
 		options.Port,
 		options.DatabasePath,
 	}
 
 	c.initDatabase()
 
-	// for _, v := range options.RemoteAddrs {
-	// 	c.NewConnection(v)
-	// }
-	//
-	// if (options.Port != -1 && options.Port < 1024) || options.Port > 65535 {
-	// 	return c, errors.New("Invalid instance options")
-	// }
-	//
-	// if options.Port != -1 {
-	// 	c.listenOn(options.Port)
-	// }
+	for _, v := range options.RemoteAddrs {
+		c.NewConnection(v)
+	}
+
+	if (options.Port != -1 && options.Port < 1024) || options.Port > 65535 {
+		return c, errors.New("Invalid instance options")
+	}
+
+	if options.Port != -1 {
+		c.listenOn(options.Port)
+	}
 
 	return c, nil
 }
@@ -55,9 +55,9 @@ type InstanceOptions struct {
 	// This is the time after which a message will be resent if it's not acknowledged and that SendAndWait will timeout after.
 	Timeout time.Time
 	// A reference to the certificate authority to expect to have signed certificates from remotes
-	// CA *x509.Certificate
+	CA *x509.Certificate
 	// A reference to the certificate to provide to remotes for TLS
-	// InstanceCert *tls.Certificate
+	InstanceCert *tls.Certificate
 	// The port to listen for incoming connections from remotes on. Set to -1 if this instance is not intended to listen for connections.
 	Port int
 }
