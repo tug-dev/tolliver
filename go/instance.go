@@ -25,9 +25,10 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 
 	// Create TLS config object for instantiating connections.
 	tlsConfig := &tls.Config{
-		Certificates: inst.InstanceCertificates,
-		RootCAs:      &inst.CertifcateAuthority,
-		ServerName:   addr.Host,
+		Certificates:       inst.InstanceCertificates,
+		RootCAs:            &inst.CertifcateAuthority,
+		ServerName:         addr.Host,
+		InsecureSkipVerify: true,
 	}
 
 	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
@@ -81,8 +82,9 @@ func (inst *Instance) processDatabase() {
 
 func (inst *Instance) listenOn(port int) error {
 	tlsConfig := &tls.Config{
-		Certificates: inst.InstanceCertificates,
-		RootCAs:      &inst.CertifcateAuthority,
+		Certificates:       inst.InstanceCertificates,
+		RootCAs:            &inst.CertifcateAuthority,
+		InsecureSkipVerify: true,
 	}
 
 	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port), tlsConfig)
