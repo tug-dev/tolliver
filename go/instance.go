@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -30,6 +31,7 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	}
 
 	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
+	fmt.Println("Established connection to " + addr.Host + ":" + strconv.Itoa(addr.Port))
 	if err != nil {
 		panic(err)
 	}
@@ -45,7 +47,9 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 		return handshakeErr
 	}
 
-	handleConn(inst, conn)
+	fmt.Println("Succesful handshake")
+
+	go handleConn(inst, conn)
 	return nil
 }
 
@@ -167,7 +171,7 @@ func sendBytesOverTls(mes []byte, conn *tls.Conn) {
 	n, err := conn.Write(mes)
 	var tot = n
 
-	for err != nil || tot != 9 {
+	for err != nil || tot != len(mes) {
 		n, err = conn.Write(mes[tot:])
 		tot += n
 	}
