@@ -20,15 +20,22 @@ const (
 // Creates and returns a new tolliver instance built with the supplied InstanceOptions
 // Returns an error if any of the instance options are invalid
 // Note that the port supplied in the options may differ from that supplied in the options
-// so ensure to use the field on the Instance when referencing the port.
+// so ensure to use the field on the Instance if you need to reference the port.
 func NewInstance(options InstanceOptions) (Instance, error) {
+	certs := make([]tls.Certificate, 1)
+	certs[0] = *options.InstanceCert
+
+	rootPool := x509.NewCertPool()
+	rootPool.AddCert(options.CA)
+
 	c := Instance{
 		make([]ConnectionWrapper, InitialConnectionCapacity),
 		options.Timeout,
-		nil,
-		nil,
+		certs,
+		*rootPool,
 		options.Port,
 		options.DatabasePath,
+		func() {},
 	}
 
 	c.initDatabase()

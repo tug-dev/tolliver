@@ -12,17 +12,17 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// TYPES --------------------------------------------------------------------------
-
 // PUBLIC METHODS ------------------------------------------------------------------
 
 func (inst *Instance) NewConnection(addr ConnectionAddr) error {
+	// Ignore connections which have already been made.
 	for _, v := range inst.ConnectionPool {
 		if v.Hostname == addr.Host && v.Port == addr.Port {
 			return nil
 		}
 	}
 
+	// Create TLS config object for instantiating connections.
 	tlsConfig := &tls.Config{
 		Certificates: inst.InstanceCertificates,
 		RootCAs:      &inst.CertifcateAuthority,
