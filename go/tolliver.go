@@ -30,7 +30,7 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 
 	c := Instance{
 		make([]ConnectionWrapper, InitialConnectionCapacity),
-		options.Timeout,
+		options.RetryInterval,
 		certs,
 		*rootPool,
 		options.Port,
@@ -67,8 +67,8 @@ type InstanceOptions struct {
 	RemoteAddrs []ConnectionAddr
 	// Leaving as the empty string defaults to "./tolliver.sqlite"
 	DatabasePath string
-	// This is the time after which a message will be resent if it's not acknowledged and that SendAndWait will timeout after.
-	Timeout time.Time
+	// This is the time between tolliver attempting to resend any undelivered messages in miliseconds
+	RetryInterval int
 	// A reference to the certificate authority to expect to have signed certificates from remotes
 	CA *x509.Certificate
 	// A reference to the certificate to provide to remotes for TLS
@@ -98,7 +98,7 @@ type address struct {
 
 type Instance struct {
 	ConnectionPool       []ConnectionWrapper
-	Timeout              time.Time
+	RetryInterval        int
 	InstanceCertificates []tls.Certificate
 	CertifcateAuthority  x509.CertPool
 	ListeningPort        int
