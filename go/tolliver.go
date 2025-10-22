@@ -8,6 +8,14 @@ import (
 )
 
 const InitialConnectionCapacity = 5
+const TolliverVersion = 1
+const (
+	HandshakeMessageCode       = 0
+	ChannelSubcriptionCode     = 1
+	SubscriptionResponseCode   = 2
+	ChannelUnsubscribeCode     = 3
+	UnsubscriptionResponseCode = 4
+)
 
 // Creates and returns a new tolliver instance built with the supplied InstanceOptions
 // Returns an error if any of the instance options are invalid

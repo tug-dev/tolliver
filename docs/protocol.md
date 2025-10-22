@@ -2,6 +2,9 @@
 
 ## Overview
 
+Can we for simplicity have every single message start with a 1 byte message type including handshake. I see no reason not to and it will make implementation a little cleaner.
+
+
 Tolliver provides two key features:
 - Messages which are guaranteed to deliver eventually
 - Organising the sending and receiving of messages by channels (a broad type of message e.g. vm-shutdown) and keys (specific identifiers - a sparkler node id). Messages are published to a channel or key or both and similarly handlers on incoming messages are registered by these categories.
@@ -18,6 +21,7 @@ The server and the client first establish a TCP socket between them, after which
 <!---->
 <!-- Given we are using TLS forgo API key and send the client UUID in the handshake? -->
 <!-- Also add the subscriptions that are wanted -->
+
 
 ```
 8 bytes - big endian u64 of client version (max version is therefore 2^64)

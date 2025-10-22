@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
-	"errors"
+	"encoding/binary"
 	"net"
 	"os"
 	"strconv"
@@ -54,7 +54,7 @@ func (inst *Instance) listenOn(port int) error {
 		return err
 	}
 
-	go handleListener(inst, &lst)
+	go handleListener(inst, &lst, tlsConfig)
 
 	inst.closeListener = func() {
 		err = lst.Close()
@@ -66,19 +66,21 @@ func (inst *Instance) listenOn(port int) error {
 	return nil
 }
 
-func handleListener(inst *Instance, lst *net.Listener) {
+func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
 	for {
 		conn, err := (*lst).Accept()
 		if err != nil {
 			continue
 		}
 
-		go handleConn(inst, &conn)
+		tlsConn := tls.Server(conn, cfg)
+
+		go handleConn(inst, tlsConn)
 	}
 }
 
-func handleConn(inst *Instance, conn *net.Conn) {
-	(*conn).SetReadDeadline(time.Time{})
+func handleConn(inst *Instance, conn *tls.Conn) {
+	conn.SetReadDeadline(time.Time{})
 
 	for {
 		buf := make([]byte, 1024)
@@ -87,12 +89,20 @@ func handleConn(inst *Instance, conn *net.Conn) {
 			continue
 		}
 
-		inst.handleMessage(buf[:n])
+		inst.handleMessage(buf[:n], conn)
 	}
 }
 
-func (inst *Instance) handleMessage(raw []byte) {
-	println(string(raw))
+func (inst *Instance) handleMessage(raw []byte, conn *tls.Conn) {
+	println("Message type is " + strconv.Itoa(int(raw[0])))
+	println(string(raw[1:]))
+
+	switch int(raw[0]) {
+	case 0:
+		println("Handshake message")
+	default:
+		println("Unrecognised message type")
+	}
 }
 
 // Opens the database and ensures it is initialised.
@@ -112,12 +122,6 @@ func (inst *Instance) initDatabase() error {
 	return nil
 }
 
-// Connect to a new remote. If there is an issue with the arguments supplied an error will be returned with one of the following types:
-//
-// Unable to resolve hostname
-// Remote not accepting connections on the given port
-// Remote not authorized
-// Tolliver handshake failed
 func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	for _, v := range inst.ConnectionPool {
 		if v.Hostname == addr.Host && v.Port == addr.Port {
@@ -133,12 +137,7 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 
 	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
 	if err != nil {
-		println(err.Error())
-		var certErr *tls.CertificateVerificationError
-		if errors.As(err, &certErr) {
-			println("Certificate invalid")
-			return errors.New("Remote not authorized")
-		}
+		panic(err)
 	}
 
 	inst.ConnectionPool = append(inst.ConnectionPool, ConnectionWrapper{
@@ -147,10 +146,32 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 		Port:       addr.Port,
 	})
 
-	connErr := make(chan error)
-	go manageConnection(inst, conn, connErr)
+	handshakeErr := sendHandshake(conn)
+	if handshakeErr != nil {
+		return handshakeErr
+	}
 
-	return <-connErr
+	handleConn(inst, conn)
+	return nil
+}
+
+func sendHandshake(conn *tls.Conn) error {
+	mes := make([]byte, 1)
+	mes[0] = byte(HandshakeMessageCode)
+	mes = binary.BigEndian.AppendUint64(mes, TolliverVersion)
+	sendBytesOverTls(mes, conn)
+
+	return nil
+}
+
+func sendBytesOverTls(mes []byte, conn *tls.Conn) {
+	n, err := conn.Write(mes)
+	var tot = n
+
+	for err != nil || tot != 9 {
+		n, err = conn.Write(mes[tot:])
+		tot += n
+	}
 }
 
 // Write the message to the database and all of the intended recipients, then attempt to send the message.
