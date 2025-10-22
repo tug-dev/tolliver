@@ -22,6 +22,22 @@ const (
 // Note that the port supplied in the options may differ from that supplied in the options
 // so ensure to use the field on the Instance if you need to reference the port.
 func NewInstance(options InstanceOptions) (Instance, error) {
+	if (options.Port >= 1 && options.Port < 1024) || options.Port > 65535 || options.CA == nil || options.InstanceCert == nil {
+		return Instance{}, errors.New("Invalid instance options")
+	}
+
+	if options.Port == 0 {
+		options.Port = 7011
+	}
+
+	if options.RetryInterval == 0 {
+		options.RetryInterval = 10_000
+	}
+
+	if options.DatabasePath == "" {
+		options.DatabasePath = "./tolliver.sqlite"
+	}
+
 	certs := make([]tls.Certificate, 1)
 	certs[0] = *options.InstanceCert
 
@@ -29,23 +45,18 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 	rootPool.AddCert(options.CA)
 
 	c := Instance{
-		make([]ConnectionWrapper, InitialConnectionCapacity),
-		options.RetryInterval,
-		certs,
-		*rootPool,
-		options.Port,
-		options.DatabasePath,
-		func() {},
+		ConnectionPool:       make([]ConnectionWrapper, InitialConnectionCapacity),
+		RetryInterval:        options.RetryInterval,
+		InstanceCertificates: certs,
+		CertifcateAuthority:  *rootPool,
+		ListeningPort:        options.Port,
+		DatabasePath:         options.DatabasePath,
 	}
 
 	c.initDatabase()
 
 	for _, v := range options.RemoteAddrs {
 		c.NewConnection(v)
-	}
-
-	if (options.Port != -1 && options.Port < 1024) || options.Port > 65535 {
-		return c, errors.New("Invalid instance options")
 	}
 
 	if options.Port != -1 {
@@ -68,15 +79,15 @@ type ConnectionAddr struct {
 type InstanceOptions struct {
 	// Can be provided to avoid having to call NewConnection manually
 	RemoteAddrs []ConnectionAddr
-	// Leaving as the empty string defaults to "./tolliver.sqlite"
+	// Defaults to "./tolliver.sqlite"
 	DatabasePath string
-	// This is the time between tolliver attempting to resend any undelivered messages in miliseconds
-	RetryInterval int
-	// A reference to the certificate authority to expect to have signed certificates from remotes
+	// This is the time between tolliver attempting to resend any undelivered messages in miliseconds, defaults to 10_000
+	RetryInterval uint
+	// A reference to the certificate authority to expect to have signed certificates from remotes, must be supplied
 	CA *x509.Certificate
-	// A reference to the certificate to provide to remotes for TLS
+	// A reference to the certificate to provide to remotes for TLS, must be supplied
 	InstanceCert *tls.Certificate
-	// The port to listen for incoming connections from remotes on. Set to -1 if this instance is not intended to listen for connections.
+	// The port to listen for incoming connections from remotes on. Set to -1 if this instance is not intended to listen for connections. Defaults to 7011
 	Port int
 }
 
@@ -101,7 +112,7 @@ type address struct {
 
 type Instance struct {
 	ConnectionPool       []ConnectionWrapper
-	RetryInterval        int
+	RetryInterval        uint
 	InstanceCertificates []tls.Certificate
 	CertifcateAuthority  x509.CertPool
 	ListeningPort        int

@@ -85,7 +85,7 @@ func (inst *Instance) listenOn(port int) error {
 		RootCAs:      &inst.CertifcateAuthority,
 	}
 
-	lst, err := tls.Listen("tcp", strconv.Itoa(port), tlsConfig)
+	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port), tlsConfig)
 	if err != nil {
 		return err
 	}
