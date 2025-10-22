@@ -4,12 +4,12 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"encoding/binary"
-	"fmt"
 	"net"
 	"os"
 	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
 
@@ -32,7 +32,6 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	}
 
 	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
-	fmt.Println("Established connection to " + addr.Host + ":" + strconv.Itoa(addr.Port))
 	if err != nil {
 		panic(err)
 	}
@@ -47,8 +46,6 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	if handshakeErr != nil {
 		return handshakeErr
 	}
-
-	fmt.Println("Succesful handshake")
 
 	go handleConn(inst, conn)
 	return nil
@@ -105,7 +102,6 @@ func (inst *Instance) listenOn(port int) error {
 }
 
 func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
-	fmt.Println("handling listener")
 	for {
 		conn, err := (*lst).Accept()
 		if err != nil {
@@ -119,7 +115,6 @@ func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
 }
 
 func handleConn(inst *Instance, conn *tls.Conn) {
-	fmt.Println("Connection")
 	conn.SetReadDeadline(time.Time{})
 
 	for {
@@ -159,6 +154,22 @@ func (inst *Instance) initDatabase() error {
 	}
 
 	db.Exec(string(schemaQ))
+
+	rows, qErr := db.Query("select uuid from instance")
+
+	if qErr != nil {
+		return qErr
+	}
+
+	if !rows.Next() {
+		instanceId, _ := uuid.NewV7()
+		idBlob, _ := instanceId.MarshalBinary()
+		_, insErr := db.Exec("insert into instance (uuid) values (?)", idBlob)
+		if insErr != nil {
+			panic(insErr.Error())
+		}
+	}
+
 	return nil
 }
 
@@ -181,9 +192,13 @@ func sendBytesOverTls(mes []byte, conn *tls.Conn) {
 	}
 }
 
-func matches(a, b SubcriptionInfo) bool {
-	return (a.Channel == b.Channel || b.Channel == "") &&
-		(a.Key == b.Key || b.Key == "")
+func matches(msgSubscription, remoteSubscription SubcriptionInfo) bool {
+	if msgSubscription.Channel == "tolliver" {
+		return true
+	}
+
+	return (msgSubscription.Channel == remoteSubscription.Channel || remoteSubscription.Channel == "") &&
+		(msgSubscription.Key == remoteSubscription.Key || remoteSubscription.Key == "")
 }
 
 // Performs the tolliver handshake over the connection then waits for messages and passes these to the
