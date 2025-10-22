@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 )
 
 const InitialConnectionCapacity = 5
@@ -48,7 +49,10 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 	}
 
 	if options.Port != -1 {
-		c.listenOn(options.Port)
+		err := c.listenOn(options.Port)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 	}
 
 	return c, nil
