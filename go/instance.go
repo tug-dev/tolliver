@@ -13,6 +13,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// TYPES --------------------------------------------------------------------------
+
 type ConnectionWrapper struct {
 	Connection    *tls.Conn
 	Hostname      string
@@ -39,6 +41,64 @@ type Instance struct {
 	DatabasePath         string
 	closeListener        func()
 }
+
+// PUBLIC METHODS ------------------------------------------------------------------
+
+func (inst *Instance) NewConnection(addr ConnectionAddr) error {
+	for _, v := range inst.ConnectionPool {
+		if v.Hostname == addr.Host && v.Port == addr.Port {
+			return nil
+		}
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: inst.InstanceCertificates,
+		RootCAs:      &inst.CertifcateAuthority,
+		ServerName:   addr.Host,
+	}
+
+	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	inst.ConnectionPool = append(inst.ConnectionPool, ConnectionWrapper{
+		Connection: conn,
+		Hostname:   addr.Host,
+		Port:       addr.Port,
+	})
+
+	handshakeErr := sendHandshake(conn)
+	if handshakeErr != nil {
+		return handshakeErr
+	}
+
+	handleConn(inst, conn)
+	return nil
+}
+
+// Write the message to the database and all of the intended recipients, then attempt to send the message.
+func (inst *Instance) Send(msg Message, channel, key string) {
+
+}
+
+func (inst *Instance) UnreliableSend(msg Message, channel, key string) {
+
+}
+
+func (inst *Instance) Subscribe(channel, key string) {
+
+}
+
+func (inst *Instance) Unsubscribe(channel, key string) {
+
+}
+
+func (inst *Instance) RegisterCallback(cb func(Message), channel, key string) {
+
+}
+
+// INTERNAL METHODS -----------------------------------------------------------------
 
 func (inst *Instance) processDatabase() {
 }
@@ -122,39 +182,6 @@ func (inst *Instance) initDatabase() error {
 	return nil
 }
 
-func (inst *Instance) NewConnection(addr ConnectionAddr) error {
-	for _, v := range inst.ConnectionPool {
-		if v.Hostname == addr.Host && v.Port == addr.Port {
-			return nil
-		}
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: inst.InstanceCertificates,
-		RootCAs:      &inst.CertifcateAuthority,
-		ServerName:   addr.Host,
-	}
-
-	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
-	if err != nil {
-		panic(err)
-	}
-
-	inst.ConnectionPool = append(inst.ConnectionPool, ConnectionWrapper{
-		Connection: conn,
-		Hostname:   addr.Host,
-		Port:       addr.Port,
-	})
-
-	handshakeErr := sendHandshake(conn)
-	if handshakeErr != nil {
-		return handshakeErr
-	}
-
-	handleConn(inst, conn)
-	return nil
-}
-
 func sendHandshake(conn *tls.Conn) error {
 	mes := make([]byte, 1)
 	mes[0] = byte(HandshakeMessageCode)
@@ -174,18 +201,9 @@ func sendBytesOverTls(mes []byte, conn *tls.Conn) {
 	}
 }
 
-// Write the message to the database and all of the intended recipients, then attempt to send the message.
-func (inst *Instance) Send(msg Message, channel, key string) {
-
-}
-
 func matches(a, b SubcriptionInfo) bool {
 	return (a.Channel == b.Channel || b.Channel == "") &&
 		(a.Key == b.Key || b.Key == "")
-}
-
-func (inst *Instance) UnreliableSend(msg Message, channel, key string) {
-
 }
 
 // Performs the tolliver handshake over the connection then waits for messages and passes these to the
