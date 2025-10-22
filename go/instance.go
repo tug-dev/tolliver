@@ -103,6 +103,7 @@ func (inst *Instance) listenOn(port int) error {
 }
 
 func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
+	fmt.Println("handling listener")
 	for {
 		conn, err := (*lst).Accept()
 		if err != nil {
@@ -116,6 +117,7 @@ func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
 }
 
 func handleConn(inst *Instance, conn *tls.Conn) {
+	fmt.Println("Connection")
 	conn.SetReadDeadline(time.Time{})
 
 	for {
@@ -160,7 +162,7 @@ func (inst *Instance) initDatabase() error {
 
 func sendHandshake(conn *tls.Conn) error {
 	mes := make([]byte, 1)
-	mes[0] = byte(HandshakeMessageCode)
+	mes[0] = byte(HandshakeReqMessageCode)
 	mes = binary.BigEndian.AppendUint64(mes, TolliverVersion)
 	sendBytesOverTls(mes, conn)
 
