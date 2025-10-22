@@ -72,13 +72,29 @@ type InstanceOptions struct {
 
 type Message []byte
 
-// Represents a message that has been published.
-type PublishedMessage interface {
-	// Removes the message from the database. This does NOT guarantee that the message will not have been received by a server already.
-	// However, this will mean the message will not be received at an arbitary point in the future.
-	Cancel()
+type ConnectionWrapper struct {
+	Connection    *tls.Conn
+	Hostname      string
+	Port          int
+	Subscriptions []SubcriptionInfo
 }
 
-type MessageHandler interface {
-	Unregister()
+type SubcriptionInfo struct {
+	Channel string
+	Key     string
+}
+
+type address struct {
+	Hostname string
+	Port     int
+}
+
+type Instance struct {
+	ConnectionPool       []ConnectionWrapper
+	Timeout              time.Time
+	InstanceCertificates []tls.Certificate
+	CertifcateAuthority  x509.CertPool
+	ListeningPort        int
+	DatabasePath         string
+	closeListener        func()
 }

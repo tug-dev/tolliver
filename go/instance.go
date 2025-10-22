@@ -2,7 +2,6 @@ package tolliver
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"database/sql"
 	"encoding/binary"
 	"net"
@@ -14,33 +13,6 @@ import (
 )
 
 // TYPES --------------------------------------------------------------------------
-
-type ConnectionWrapper struct {
-	Connection    *tls.Conn
-	Hostname      string
-	Port          int
-	Subscriptions []SubcriptionInfo
-}
-
-type SubcriptionInfo struct {
-	Channel string
-	Key     string
-}
-
-type address struct {
-	Hostname string
-	Port     int
-}
-
-type Instance struct {
-	ConnectionPool       []ConnectionWrapper
-	Timeout              time.Time
-	InstanceCertificates []tls.Certificate
-	CertifcateAuthority  x509.CertPool
-	ListeningPort        int
-	DatabasePath         string
-	closeListener        func()
-}
 
 // PUBLIC METHODS ------------------------------------------------------------------
 

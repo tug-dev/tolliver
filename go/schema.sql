@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS message (
 	id     INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-	channel TEXT NOT NULL,
-    `key` TEXT NOT NULL,
+	channel TEXT,
+    `key` TEXT,
 	data   BLOB NOT NULL
 );
 
@@ -23,18 +23,6 @@ CREATE TABLE IF NOT EXISTS subscription (
     channel TEXT,
     `key` TEXT,
     instance_id TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS subscription_delivery (
-    subscription_id INTEGER NOT NULL,
-    recipient_id BLOB NOT NULL,
-    FOREIGN KEY(subscription_id) REFERENCES subscription(id)
-);
-
-CREATE TABLE IF NOT EXISTS unsubscription_delivery (
-    subscription_id INTEGER NOT NULL,
-    recipient_id BLOB NOT NULL,
-    FOREIGN KEY(subscription_id) REFERENCES subscription(id)
 );
 
 CREATE INDEX IF NOT EXISTS subscription_instance_id_idx ON subscription (
