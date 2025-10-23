@@ -15,7 +15,7 @@ code 1, format: 8 byte big endian u64 tolliver version 16 bytes instance UUID(v7
 
 
 Handshake final
-code 2, format: status code 0 for backwards compatibility, 1 for failure.
+code 2, format: status code 1 for backwards compatibility, 2 for failure (to match response codes)
 
 Subscription and unsubscription messages are to be sent as regular information messages with no key on the reserved "tolliver" channel (as such the API for tolliver should forbid this channel from being used by application level messages). The body of the message will have the format of 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - UTF-8 encoded channel name - UTF-8 encoded key name.
 
