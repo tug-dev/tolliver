@@ -4,9 +4,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"fmt"
 )
+
+//go:embed schema.sql
+var Schema string
 
 const InitialConnectionCapacity = 5
 const TolliverVersion = 1

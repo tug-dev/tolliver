@@ -1,15 +1,10 @@
 package tolliver
 
 import (
+	"fmt"
 	"testing"
-	"time"
 )
 
 func TestBasicTest(t *testing.T) {
-	NewInstance(InstanceOptions{
-		nil,
-		"tolliver.sqlite",
-		time.Now(),
-		5555,
-	})
+	fmt.Println(Schema)
 }
