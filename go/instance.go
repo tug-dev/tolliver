@@ -17,7 +17,7 @@ import (
 
 func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	// Ignore connections which have already been made.
-	for _, v := range inst.ConnectionPool {
+	for _, v := range inst.connectionPool {
 		if v.Hostname == addr.Host && v.Port == addr.Port {
 			return nil
 		}
@@ -25,8 +25,8 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 
 	// Create TLS config object for instantiating connections.
 	tlsConfig := &tls.Config{
-		Certificates:       inst.InstanceCertificates,
-		RootCAs:            &inst.CertifcateAuthority,
+		Certificates:       inst.instanceCertificates,
+		RootCAs:            &inst.certifcateAuthority,
 		ServerName:         addr.Host,
 		InsecureSkipVerify: true,
 	}
@@ -36,13 +36,13 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 		panic(err)
 	}
 
-	inst.ConnectionPool = append(inst.ConnectionPool, ConnectionWrapper{
+	inst.connectionPool = append(inst.connectionPool, ConnectionWrapper{
 		Connection: conn,
 		Hostname:   addr.Host,
 		Port:       addr.Port,
 	})
 
-	handshakeErr := sendHandshake(conn)
+	handshakeErr := sendHandshake(conn, inst.instanceId, &inst.subscriptions)
 	if handshakeErr != nil {
 		return handshakeErr
 	}
@@ -79,8 +79,8 @@ func (inst *Instance) processDatabase() {
 
 func (inst *Instance) listenOn(port int) error {
 	tlsConfig := &tls.Config{
-		Certificates:       inst.InstanceCertificates,
-		RootCAs:            &inst.CertifcateAuthority,
+		Certificates:       inst.instanceCertificates,
+		RootCAs:            &inst.certifcateAuthority,
 		InsecureSkipVerify: true,
 	}
 
@@ -142,7 +142,7 @@ func (inst *Instance) handleMessage(raw []byte, conn *tls.Conn) {
 
 // Opens the database and ensures it is initialised.
 func (inst *Instance) initDatabase() error {
-	db, err := sql.Open("sqlite", inst.DatabasePath)
+	db, err := sql.Open("sqlite", inst.databasePath)
 	schemaQ, schemaErr := os.ReadFile("./schema.sql")
 
 	if schemaErr != nil {
@@ -164,22 +164,42 @@ func (inst *Instance) initDatabase() error {
 	if !rows.Next() {
 		instanceId, _ := uuid.NewV7()
 		idBlob, _ := instanceId.MarshalBinary()
+		inst.instanceId = idBlob
+
 		_, insErr := db.Exec("insert into instance (uuid) values (?)", idBlob)
 		if insErr != nil {
 			panic(insErr.Error())
 		}
+	} else {
+		rows.Scan(inst.instanceId)
 	}
 
 	return nil
 }
 
-func sendHandshake(conn *tls.Conn) error {
-	mes := make([]byte, 1)
-	mes[0] = byte(HandshakeReqMessageCode)
-	mes = binary.BigEndian.AppendUint64(mes, TolliverVersion)
-	sendBytesOverTls(mes, conn)
+func sendHandshake(conn *tls.Conn, id []byte, subscriptions *[]SubcriptionInfo) error {
+	req := make([]byte, 1)
+	req[0] = byte(uint8(HandshakeReqMessageCode))
+	req = binary.BigEndian.AppendUint64(req, TolliverVersion)
+	req = append(req, id...)
+	req = binary.BigEndian.AppendUint32(req, uint32(len(*subscriptions)))
+
+	for _, v := range *subscriptions {
+		req = binary.BigEndian.AppendUint32(req, uint32(len(v.Channel)))
+		req = binary.BigEndian.AppendUint32(req, uint32(len(v.Key)))
+		req = append(req, []byte(v.Channel)...)
+		req = append(req, []byte(v.Key)...)
+	}
+
+	sendBytesOverTls(req, conn)
+
+	// conn.Read()
 
 	return nil
+}
+
+func (inst *Instance) loadSubscriptions() {
+
 }
 
 func sendBytesOverTls(mes []byte, conn *tls.Conn) {
@@ -199,27 +219,4 @@ func matches(msgSubscription, remoteSubscription SubcriptionInfo) bool {
 
 	return (msgSubscription.Channel == remoteSubscription.Channel || remoteSubscription.Channel == "") &&
 		(msgSubscription.Key == remoteSubscription.Key || remoteSubscription.Key == "")
-}
-
-// Performs the tolliver handshake over the connection then waits for messages and passes these to the
-// instance when they are received.
-func manageConnection(inst *Instance, conn *tls.Conn, errChan chan error) {
-	for {
-		if conn.ConnectionState().HandshakeComplete {
-			buf := make([]byte, 0)
-			_, err := conn.Read(buf)
-			// We can ignore any errors here as the sender will resend the message if no ack is received
-			if err != nil {
-				continue
-			}
-			// c.onReceived()
-		}
-	}
-}
-
-// Closes all connections of the instace. Note this method does not clear subscriptions
-// nor unsent messages. It is simply to be used to free resources gracefully once the
-// instance is no longer required.
-func (inst *Instance) Close() {
-
 }

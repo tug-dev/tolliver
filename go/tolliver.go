@@ -3,6 +3,7 @@ package tolliver
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"errors"
 	"fmt"
 )
@@ -22,6 +23,7 @@ const (
 // Note that the port supplied in the options may differ from that supplied in the options
 // so ensure to use the field on the Instance if you need to reference the port.
 func NewInstance(options InstanceOptions) (Instance, error) {
+	// Process options
 	if (options.Port >= 1 && options.Port < 1024) || options.Port > 65535 || options.CA == nil || options.InstanceCert == nil {
 		return Instance{}, errors.New("Invalid instance options")
 	}
@@ -45,15 +47,21 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 	rootPool.AddCert(options.CA)
 
 	c := Instance{
-		ConnectionPool:       make([]ConnectionWrapper, InitialConnectionCapacity),
-		RetryInterval:        options.RetryInterval,
-		InstanceCertificates: certs,
-		CertifcateAuthority:  *rootPool,
+		connectionPool:       make([]ConnectionWrapper, InitialConnectionCapacity),
+		retryInterval:        options.RetryInterval,
+		instanceCertificates: certs,
+		certifcateAuthority:  *rootPool,
 		ListeningPort:        options.Port,
-		DatabasePath:         options.DatabasePath,
+		databasePath:         options.DatabasePath,
 	}
 
-	c.initDatabase()
+	initErr := c.initDatabase()
+
+	if initErr != nil {
+		panic(initErr.Error())
+	}
+
+	c.loadSubscriptions()
 
 	for _, v := range options.RemoteAddrs {
 		c.NewConnection(v)
@@ -111,11 +119,14 @@ type address struct {
 }
 
 type Instance struct {
-	ConnectionPool       []ConnectionWrapper
-	RetryInterval        uint
-	InstanceCertificates []tls.Certificate
-	CertifcateAuthority  x509.CertPool
+	connectionPool       []ConnectionWrapper
+	retryInterval        uint
+	instanceCertificates []tls.Certificate
+	certifcateAuthority  x509.CertPool
 	ListeningPort        int
-	DatabasePath         string
+	databasePath         string
+	database             *sql.DB
 	closeListener        func()
+	subscriptions        []SubcriptionInfo
+	instanceId           []byte
 }
