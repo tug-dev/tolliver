@@ -22,6 +22,13 @@ const (
 	AckMessageCode          = 4
 )
 
+const (
+	HandshakeSuccess             = 0
+	HandshakeBackwardsCompatible = 1
+	HandshakeIncompatible        = 2
+	HandshakeRequestCompatible   = 3
+)
+
 // Creates and returns a new tolliver instance built with the supplied InstanceOptions
 // Returns an error if any of the instance options are invalid
 // Note that the port supplied in the options may differ from that supplied in the options
@@ -51,7 +58,7 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 	rootPool.AddCert(options.CA)
 
 	c := Instance{
-		connectionPool:       make([]ConnectionWrapper, InitialConnectionCapacity),
+		connectionPool:       make([]connectionWrapper, InitialConnectionCapacity),
 		retryInterval:        options.RetryInterval,
 		instanceCertificates: certs,
 		certifcateAuthority:  *rootPool,
@@ -105,11 +112,12 @@ type InstanceOptions struct {
 
 type Message []byte
 
-type ConnectionWrapper struct {
+type connectionWrapper struct {
 	Connection    *tls.Conn
 	Hostname      string
 	Port          int
 	Subscriptions []SubcriptionInfo
+	RemoteId      []byte
 }
 
 type SubcriptionInfo struct {
@@ -117,13 +125,8 @@ type SubcriptionInfo struct {
 	Key     string
 }
 
-type address struct {
-	Hostname string
-	Port     int
-}
-
 type Instance struct {
-	connectionPool       []ConnectionWrapper
+	connectionPool       []connectionWrapper
 	retryInterval        uint
 	instanceCertificates []tls.Certificate
 	certifcateAuthority  x509.CertPool

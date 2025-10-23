@@ -3,7 +3,6 @@ package tolliver
 import (
 	"crypto/tls"
 	"database/sql"
-	"encoding/binary"
 	"net"
 	"os"
 	"strconv"
@@ -36,18 +35,14 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 		panic(err)
 	}
 
-	inst.connectionPool = append(inst.connectionPool, ConnectionWrapper{
-		Connection: conn,
-		Hostname:   addr.Host,
-		Port:       addr.Port,
-	})
-
-	handshakeErr := sendHandshake(conn, inst.instanceId, &inst.subscriptions)
+	connInfo, handshakeErr := sendHandshake(conn, inst.instanceId, &inst.subscriptions, addr.Host, addr.Port)
 	if handshakeErr != nil {
 		return handshakeErr
 	}
 
-	go handleConn(inst, conn)
+	inst.connectionPool = append(inst.connectionPool, connInfo)
+
+	go handleConn(inst, &connInfo)
 	return nil
 }
 
@@ -110,16 +105,16 @@ func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
 
 		tlsConn := tls.Server(conn, cfg)
 
-		go handleConn(inst, tlsConn)
+		go handleConn(inst, &connectionWrapper{Connection: tlsConn})
 	}
 }
 
-func handleConn(inst *Instance, conn *tls.Conn) {
-	conn.SetReadDeadline(time.Time{})
+func handleConn(inst *Instance, conn *connectionWrapper) {
+	conn.Connection.SetReadDeadline(time.Time{})
 
 	for {
 		buf := make([]byte, 1024)
-		n, err := (*conn).Read(buf)
+		n, err := conn.Connection.Read(buf)
 		if err != nil {
 			continue
 		}
@@ -128,7 +123,7 @@ func handleConn(inst *Instance, conn *tls.Conn) {
 	}
 }
 
-func (inst *Instance) handleMessage(raw []byte, conn *tls.Conn) {
+func (inst *Instance) handleMessage(raw []byte, conn *connectionWrapper) {
 	println("Message type is " + strconv.Itoa(int(raw[0])))
 	println(string(raw[1:]))
 
@@ -173,27 +168,6 @@ func (inst *Instance) initDatabase() error {
 	} else {
 		rows.Scan(inst.instanceId)
 	}
-
-	return nil
-}
-
-func sendHandshake(conn *tls.Conn, id []byte, subscriptions *[]SubcriptionInfo) error {
-	req := make([]byte, 1)
-	req[0] = byte(uint8(HandshakeReqMessageCode))
-	req = binary.BigEndian.AppendUint64(req, TolliverVersion)
-	req = append(req, id...)
-	req = binary.BigEndian.AppendUint32(req, uint32(len(*subscriptions)))
-
-	for _, v := range *subscriptions {
-		req = binary.BigEndian.AppendUint32(req, uint32(len(v.Channel)))
-		req = binary.BigEndian.AppendUint32(req, uint32(len(v.Key)))
-		req = append(req, []byte(v.Channel)...)
-		req = append(req, []byte(v.Key)...)
-	}
-
-	sendBytesOverTls(req, conn)
-
-	// conn.Read()
 
 	return nil
 }
