@@ -138,17 +138,12 @@ func (inst *Instance) handleMessage(raw []byte, conn *connectionWrapper) {
 // Opens the database and ensures it is initialised.
 func (inst *Instance) initDatabase() error {
 	db, err := sql.Open("sqlite", inst.databasePath)
-	schemaQ, schemaErr := os.ReadFile("./schema.sql")
-
-	if schemaErr != nil {
-		return schemaErr
-	}
 
 	if err != nil {
 		return err
 	}
 
-	db.Exec(string(schemaQ))
+	db.Exec(string(Schema))
 
 	rows, qErr := db.Query("select uuid from instance")
 
