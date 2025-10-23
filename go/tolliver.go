@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"net"
 )
 
 //go:embed schema.sql
@@ -113,7 +114,7 @@ type InstanceOptions struct {
 type Message []byte
 
 type connectionWrapper struct {
-	Connection    *tls.Conn
+	Connection    net.Conn
 	Hostname      string
 	Port          int
 	Subscriptions []SubcriptionInfo

@@ -10,8 +10,8 @@ import (
 
 func sendHandshake(conn *tls.Conn, id []byte, subscriptions *[]SubcriptionInfo, hostname string, port int) (connectionWrapper, error) {
 	req := buildHandshakeReq(id, subscriptions)
-	sendBytesOverTls(req, conn)
-	res := make([]byte, 0)
+	sendBytes(req, conn)
+	res := make([]byte, 1)
 	_, err := conn.Read(res)
 
 	if err != nil {
@@ -56,13 +56,13 @@ func processHandshakeRes(res []byte, conn *tls.Conn) error {
 			final := make([]byte, 2)
 			final[0] = byte(uint8(HandshakeFinMessageCode))
 			final[1] = byte(uint8(HandshakeIncompatible))
-			sendBytesOverTls(final, conn)
+			sendBytes(final, conn)
 			return errors.New("Incompatible tolliver versions")
 		} else {
 			final := make([]byte, 2)
 			final[0] = byte(uint8(HandshakeFinMessageCode))
 			final[1] = byte(uint8(HandshakeRequestCompatible))
-			sendBytesOverTls(final, conn)
+			sendBytes(final, conn)
 		}
 	}
 

@@ -25,7 +25,6 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	tlsConfig := &tls.Config{
 		Certificates:       inst.instanceCertificates,
 		RootCAs:            &inst.certifcateAuthority,
-		ServerName:         addr.Host,
 		InsecureSkipVerify: true,
 	}
 
@@ -78,12 +77,12 @@ func (inst *Instance) listenOn(port int) error {
 		InsecureSkipVerify: true,
 	}
 
-	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port), tlsConfig)
+	lst, err := tls.Listen("tcp", ":"+strconv.Itoa(port), tlsConfig)
 	if err != nil {
 		return err
 	}
 
-	go handleListener(inst, &lst, tlsConfig)
+	go handleListener(inst, lst)
 
 	inst.closeListener = func() {
 		err = lst.Close()
@@ -95,16 +94,14 @@ func (inst *Instance) listenOn(port int) error {
 	return nil
 }
 
-func handleListener(inst *Instance, lst *net.Listener, cfg *tls.Config) {
+func handleListener(inst *Instance, lst net.Listener) {
 	for {
-		conn, err := (*lst).Accept()
+		conn, err := lst.Accept()
 		if err != nil {
 			continue
 		}
 
-		tlsConn := tls.Server(conn, cfg)
-
-		go handleConn(inst, &connectionWrapper{Connection: tlsConn})
+		go handleConn(inst, &connectionWrapper{Connection: conn})
 	}
 }
 
@@ -170,7 +167,7 @@ func (inst *Instance) loadSubscriptions() {
 
 }
 
-func sendBytesOverTls(mes []byte, conn *tls.Conn) {
+func sendBytes(mes []byte, conn net.Conn) {
 	n, err := conn.Write(mes)
 	var tot = n
 
