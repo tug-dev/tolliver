@@ -3,6 +3,7 @@ package tolliver
 import (
 	"crypto/tls"
 	"database/sql"
+	"fmt"
 	"net"
 	"strconv"
 	"time"
@@ -101,7 +102,12 @@ func handleListener(inst *Instance, lst net.Listener) {
 			continue
 		}
 
-		go handleConn(inst, &connectionWrapper{Connection: conn})
+		connWrap, handshakeErr := awaitHandshake(conn, inst.instanceId, &inst.subscriptions)
+		if handshakeErr != nil {
+			continue
+		}
+
+		go handleConn(inst, &connWrap)
 	}
 }
 
@@ -120,15 +126,9 @@ func handleConn(inst *Instance, conn *connectionWrapper) {
 }
 
 func (inst *Instance) handleMessage(raw []byte, conn *connectionWrapper) {
-	println("Message type is " + strconv.Itoa(int(raw[0])))
-	println(string(raw[1:]))
+	fmt.Printf("Messaage from %08b\n", conn.RemoteId)
+	fmt.Printf("%08b\n", raw)
 
-	switch int(raw[0]) {
-	case 0:
-		println("Handshake message")
-	default:
-		println("Unrecognised message type")
-	}
 }
 
 // Opens the database and ensures it is initialised.
