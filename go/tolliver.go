@@ -16,18 +16,18 @@ var Schema string
 const InitialConnectionCapacity = 5
 const TolliverVersion = 1
 const (
-	HandshakeReqMessageCode = 0
-	HandshakeResMessageCode = 1
-	HandshakeFinMessageCode = 2
-	RegularMessageCode      = 3
-	AckMessageCode          = 4
+	HandshakeReqMessageCode uint8 = iota
+	HandshakeResMessageCode
+	HandshakeFinMessageCode
+	RegularMessageCode
+	AckMessageCode
 )
 
 const (
-	HandshakeSuccess             = 0
-	HandshakeBackwardsCompatible = 1
-	HandshakeIncompatible        = 2
-	HandshakeRequestCompatible   = 3
+	HandshakeSuccess uint8 = iota
+	HandshakeBackwardsCompatible
+	HandshakeIncompatible
+	HandshakeRequestCompatible
 )
 
 // Creates and returns a new tolliver instance built with the supplied InstanceOptions
@@ -36,7 +36,7 @@ const (
 // so ensure to use the field on the Instance if you need to reference the port.
 func NewInstance(options InstanceOptions) (Instance, error) {
 	// Process options
-	if (options.Port >= 1 && options.Port < 1024) || options.Port > 65535 || options.CA == nil || options.InstanceCert == nil {
+	if options.Port < 0 || options.Port > 65535 || options.CA == nil || options.InstanceCert == nil {
 		return Instance{}, errors.New("Invalid instance options")
 	}
 
@@ -62,7 +62,6 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 		connectionPool:       make([]connectionWrapper, InitialConnectionCapacity),
 		retryInterval:        options.RetryInterval,
 		instanceCertificates: certs,
-		certifcateAuthority:  *rootPool,
 		ListeningPort:        options.Port,
 		databasePath:         options.DatabasePath,
 	}
@@ -70,7 +69,7 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 	initErr := c.initDatabase()
 
 	if initErr != nil {
-		panic(initErr.Error())
+		panic(initErr)
 	}
 
 	c.loadSubscriptions()
@@ -119,6 +118,7 @@ type connectionWrapper struct {
 	Port          int
 	Subscriptions []SubcriptionInfo
 	RemoteId      []byte
+	R             Reader
 }
 
 type SubcriptionInfo struct {

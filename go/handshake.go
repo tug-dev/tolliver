@@ -1,92 +1,57 @@
 package tolliver
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
-	"fmt"
+	"go/version"
 	"net"
-
-	"github.com/google/uuid"
 )
 
-func sendHandshake(conn *tls.Conn, id []byte, subscriptions *[]SubcriptionInfo, hostname string, port int) (connectionWrapper, error) {
+func sendHandshake(conn *tls.Conn, id []byte, subscriptions []SubcriptionInfo, hostname string, port int) (connectionWrapper, error) {
+	r := Reader{bufio.NewReader(conn)}
 	req := buildHandshakeReq(id, subscriptions)
 	sendBytes(req, conn)
-	res := make([]byte, 1)
-	_, err := conn.Read(res)
 
-	if err != nil {
-		panic(err.Error())
-	}
-
-	err = processHandshakeRes(res, conn)
+	remoteId, remoteSubscriptions, err := parseHandshakeResponse(r)
 	if err != nil {
 		return connectionWrapper{}, err
 	}
-
-	remoteSubscriptions := readSubscriptions(res, 25)
-	remoteId, idErr := uuid.ParseBytes(res[9:25])
-	if idErr != nil {
-		return connectionWrapper{}, idErr
-	}
-
-	remoteIdBytes, _ := remoteId.MarshalBinary()
 
 	return connectionWrapper{
 		Connection:    conn,
 		Hostname:      hostname,
 		Port:          port,
 		Subscriptions: remoteSubscriptions,
-		RemoteId:      remoteIdBytes,
+		RemoteId:      remoteId,
+		R:             r,
 	}, nil
 }
 
-func awaitHandshake(conn net.Conn, instanceId []byte, subscriptions *[]SubcriptionInfo) (connectionWrapper, error) {
-	req := make([]byte, 32)
-	_, err := conn.Read(req)
+func parseHandshakeResponse(r Reader, conn net.Conn) error {
+	code, err := r.ReadByte()
+
 	if err != nil {
-		return connectionWrapper{}, err
+		return err
 	}
-
-	fmt.Printf("Handshake req received from %s: %08b", conn.RemoteAddr(), req)
-
-	conn.Write(buildHandshakeRes(instanceId, subscriptions, 0))
-
-	return connectionWrapper{}, nil
-}
-
-func buildHandshakeRes(instanceId []byte, subscriptions *[]SubcriptionInfo, code uint8) []byte {
-	res := make([]byte, 1)
-	res[0] = byte(uint8(HandshakeResMessageCode))
-	res = binary.BigEndian.AppendUint64(res, TolliverVersion)
-	res = append(res, instanceId...)
-	res = append(res, byte(code))
-	res = binary.BigEndian.AppendUint32(res, uint32(len(*subscriptions)))
-
-	for _, v := range *subscriptions {
-		res = binary.BigEndian.AppendUint32(res, uint32(len(v.Channel)))
-		res = binary.BigEndian.AppendUint32(res, uint32(len(v.Key)))
-		res = append(res, []byte(v.Channel)...)
-		res = append(res, []byte(v.Key)...)
-	}
-
-	return res
-}
-
-func processHandshakeRes(res []byte, conn *tls.Conn) error {
-	if res[0] != byte(uint8(HandshakeResMessageCode)) {
+	if code != HandshakeResMessageCode {
 		return errors.New("Malformed handshake response")
 	}
 
-	switch uint8(res[9]) {
+	version, err := r.ReadUint64()
+	if err != nil {
+		return err
+	}
+
+	errorCode, err := r.ReadByte()
+
+	switch errorCode {
 	case 2:
 		return errors.New("Incompatible tolliver versions")
 
 	case 3:
-		var remoteVersion uint64
-		binary.BigEndian.PutUint64(res[1:8], remoteVersion)
-		if remoteVersion != TolliverVersion {
+		if version != TolliverVersion {
 			final := make([]byte, 2)
 			final[0] = byte(uint8(HandshakeFinMessageCode))
 			final[1] = byte(uint8(HandshakeIncompatible))
@@ -103,14 +68,14 @@ func processHandshakeRes(res []byte, conn *tls.Conn) error {
 	return nil
 }
 
-func buildHandshakeReq(id []byte, subscriptions *[]SubcriptionInfo) []byte {
+func buildHandshakeReq(id []byte, subscriptions []SubcriptionInfo) []byte {
 	req := make([]byte, 1)
 	req[0] = byte(uint8(HandshakeReqMessageCode))
 	req = binary.BigEndian.AppendUint64(req, TolliverVersion)
 	req = append(req, id...)
-	req = binary.BigEndian.AppendUint32(req, uint32(len(*subscriptions)))
+	req = binary.BigEndian.AppendUint32(req, uint32(len(subscriptions)))
 
-	for _, v := range *subscriptions {
+	for _, v := range subscriptions {
 		req = binary.BigEndian.AppendUint32(req, uint32(len(v.Channel)))
 		req = binary.BigEndian.AppendUint32(req, uint32(len(v.Key)))
 		req = append(req, []byte(v.Channel)...)
@@ -118,6 +83,44 @@ func buildHandshakeReq(id []byte, subscriptions *[]SubcriptionInfo) []byte {
 	}
 
 	return req
+}
+
+func parseHandshakeRequest(r Reader) ([]byte, []SubcriptionInfo, error) {
+	remoteID := req[9:25]
+	remoteSubs := readSubscriptions(req, 25)
+
+	return remoteID, remoteSubs, 0
+}
+
+func awaitHandshake(conn net.Conn, instanceId []byte, subscriptions []SubcriptionInfo) (connectionWrapper, error) {
+	req := make([]byte, 32)
+	_, err := conn.Read(req)
+	remoteID, remoteSubs := parseHandshakeRequest(req)
+	if err != nil {
+		return connectionWrapper{}, err
+	}
+
+	conn.Write(buildHandshakeRes(instanceId, subscriptions, 0))
+
+	return connectionWrapper{Connection: conn, Subscriptions: remoteSubs, RemoteId: remoteID}, nil
+}
+
+func buildHandshakeRes(instanceId []byte, subscriptions []SubcriptionInfo, code uint8) []byte {
+	res := make([]byte, 1)
+	res[0] = byte(uint8(HandshakeResMessageCode))
+	res = binary.BigEndian.AppendUint64(res, TolliverVersion)
+	res = append(res, instanceId...)
+	res = append(res, byte(code))
+	res = binary.BigEndian.AppendUint32(res, uint32(len(subscriptions)))
+
+	for _, v := range subscriptions {
+		res = binary.BigEndian.AppendUint32(res, uint32(len(v.Channel)))
+		res = binary.BigEndian.AppendUint32(res, uint32(len(v.Key)))
+		res = append(res, []byte(v.Channel)...)
+		res = append(res, []byte(v.Key)...)
+	}
+
+	return res
 }
 
 func readSubscriptions(res []byte, start int) []SubcriptionInfo {

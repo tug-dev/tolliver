@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
+	"slices"
 	"strconv"
-	"time"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
@@ -17,7 +17,7 @@ import (
 func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	// Ignore connections which have already been made.
 	for _, v := range inst.connectionPool {
-		if v.Hostname == addr.Host && v.Port == addr.Port {
+		if slices.Equal(v.RemoteId, inst.instanceId) {
 			return nil
 		}
 	}
@@ -34,7 +34,7 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 		panic(err)
 	}
 
-	connInfo, handshakeErr := sendHandshake(conn, inst.instanceId, &inst.subscriptions, addr.Host, addr.Port)
+	connInfo, handshakeErr := sendHandshake(conn, inst.instanceId, inst.subscriptions, addr.Host, addr.Port)
 	if handshakeErr != nil {
 		return handshakeErr
 	}
@@ -102,7 +102,7 @@ func handleListener(inst *Instance, lst net.Listener) {
 			continue
 		}
 
-		connWrap, handshakeErr := awaitHandshake(conn, inst.instanceId, &inst.subscriptions)
+		connWrap, handshakeErr := awaitHandshake(conn, inst.instanceId, inst.subscriptions)
 		if handshakeErr != nil {
 			continue
 		}
@@ -112,13 +112,11 @@ func handleListener(inst *Instance, lst net.Listener) {
 }
 
 func handleConn(inst *Instance, conn *connectionWrapper) {
-	conn.Connection.SetReadDeadline(time.Time{})
-
 	for {
 		buf := make([]byte, 1024)
 		n, err := conn.Connection.Read(buf)
 		if err != nil {
-			continue
+			break
 		}
 
 		inst.handleMessage(buf[:n], conn)
@@ -157,7 +155,7 @@ func (inst *Instance) initDatabase() error {
 			panic(insErr.Error())
 		}
 	} else {
-		rows.Scan(inst.instanceId)
+		rows.Scan(&inst.instanceId)
 	}
 
 	return nil
