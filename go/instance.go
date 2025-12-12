@@ -4,12 +4,11 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	"github.com/google/uuid"
+	_ "modernc.org/sqlite"
 	"net"
 	"slices"
 	"strconv"
-
-	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
 )
 
 // PUBLIC METHODS ------------------------------------------------------------------
@@ -17,7 +16,7 @@ import (
 func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 	// Ignore connections which have already been made.
 	for _, v := range inst.connectionPool {
-		if slices.Equal(v.RemoteId, inst.instanceId) {
+		if slices.Equal(v.RemoteId[:], inst.instanceId[:]) {
 			return nil
 		}
 	}
@@ -29,6 +28,8 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 		InsecureSkipVerify: true,
 	}
 
+	println("Dialing TCP conn")
+
 	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
 	if err != nil {
 		panic(err)
@@ -36,8 +37,11 @@ func (inst *Instance) NewConnection(addr ConnectionAddr) error {
 
 	connInfo, handshakeErr := sendHandshake(conn, inst.instanceId, inst.subscriptions, addr.Host, addr.Port)
 	if handshakeErr != nil {
+		panic(handshakeErr)
 		return handshakeErr
 	}
+
+	println("Made connection")
 
 	inst.connectionPool = append(inst.connectionPool, connInfo)
 
@@ -101,11 +105,15 @@ func handleListener(inst *Instance, lst net.Listener) {
 		if err != nil {
 			continue
 		}
+		println("Accepted connection")
 
 		connWrap, handshakeErr := awaitHandshake(conn, inst.instanceId, inst.subscriptions)
 		if handshakeErr != nil {
+			println(err)
 			continue
 		}
+
+		println("Finished handshake")
 
 		go handleConn(inst, &connWrap)
 	}
@@ -148,7 +156,7 @@ func (inst *Instance) initDatabase() error {
 	if !rows.Next() {
 		instanceId, _ := uuid.NewV7()
 		idBlob, _ := instanceId.MarshalBinary()
-		inst.instanceId = idBlob
+		inst.instanceId = instanceId
 
 		_, insErr := db.Exec("insert into instance (uuid) values (?)", idBlob)
 		if insErr != nil {

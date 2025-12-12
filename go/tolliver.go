@@ -8,13 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+
+	"github.com/google/uuid"
 )
 
 //go:embed schema.sql
 var Schema string
 
 const InitialConnectionCapacity = 5
-const TolliverVersion = 1
+const TolliverVersion uint64 = 1
 const (
 	HandshakeReqMessageCode uint8 = iota
 	HandshakeResMessageCode
@@ -30,6 +32,10 @@ const (
 	HandshakeRequestCompatible
 )
 
+var (
+	InvalidInstanceOptions = errors.New("Invalid instance options")
+)
+
 // Creates and returns a new tolliver instance built with the supplied InstanceOptions
 // Returns an error if any of the instance options are invalid
 // Note that the port supplied in the options may differ from that supplied in the options
@@ -37,7 +43,7 @@ const (
 func NewInstance(options InstanceOptions) (Instance, error) {
 	// Process options
 	if options.Port < 0 || options.Port > 65535 || options.CA == nil || options.InstanceCert == nil {
-		return Instance{}, errors.New("Invalid instance options")
+		return Instance{}, InvalidInstanceOptions
 	}
 
 	if options.Port == 0 {
@@ -85,28 +91,36 @@ func NewInstance(options InstanceOptions) (Instance, error) {
 		}
 	}
 
+	println("Created instance")
+	fmt.Printf("%08b\n", c.instanceId[:])
 	return c, nil
 }
 
-// Defines the details for connecting to a remote
 type ConnectionAddr struct {
 	Host string
 	Port int
 }
 
-// The options for creating a new instance
 type InstanceOptions struct {
 	// Can be provided to avoid having to call NewConnection manually
 	RemoteAddrs []ConnectionAddr
+
 	// Defaults to "./tolliver.sqlite"
 	DatabasePath string
-	// This is the time between tolliver attempting to resend any undelivered messages in miliseconds, defaults to 10_000
+
+	// This is the time between tolliver attempting to resend any undelivered messages in
+	// miliseconds, defaults to 10_000
 	RetryInterval uint
-	// A reference to the certificate authority to expect to have signed certificates from remotes, must be supplied
+
+	// A reference to the certificate authority to expect to have signed certificates from
+	// remotes, must be supplied
 	CA *x509.Certificate
+
 	// A reference to the certificate to provide to remotes for TLS, must be supplied
 	InstanceCert *tls.Certificate
-	// The port to listen for incoming connections from remotes on. Set to -1 if this instance is not intended to listen for connections. Defaults to 7011
+
+	// The port to listen for incoming connections from remotes on. Set to -1 if this
+	// instance is not intended to listen for connections. Defaults to 7011
 	Port int
 }
 
@@ -117,7 +131,7 @@ type connectionWrapper struct {
 	Hostname      string
 	Port          int
 	Subscriptions []SubcriptionInfo
-	RemoteId      []byte
+	RemoteId      uuid.UUID
 	R             Reader
 }
 
@@ -136,5 +150,5 @@ type Instance struct {
 	database             *sql.DB
 	closeListener        func()
 	subscriptions        []SubcriptionInfo
-	instanceId           []byte
+	instanceId           uuid.UUID
 }
