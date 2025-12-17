@@ -2,51 +2,130 @@ package tolliver
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
+	_ "embed"
 	"fmt"
+	"net"
+	"strconv"
+
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
-	"net"
-	"slices"
-	"strconv"
 )
+
+type Instance struct {
+	ConnectionPool       []connectionWrapper
+	RetryInterval        uint
+	InstanceCertificates []tls.Certificate
+	CertifcateAuthority  x509.CertPool
+	ListeningPort        int
+	DatabasePath         string
+	Database             *sql.DB
+	CloseListener        func()
+	Subscriptions        []SubcriptionInfo
+	InstanceId           uuid.UUID
+}
+
+type ConnectionAddr struct {
+	Host string
+	Port int
+}
+
+type Message []byte
+
+type connectionWrapper struct {
+	Connection    net.Conn
+	Hostname      string
+	Port          int
+	Subscriptions []SubcriptionInfo
+	RemoteId      uuid.UUID
+	R             Reader
+}
+
+//go:embed schema.sql
+var Schema string
+
+const (
+	HandshakeReqMessageCode uint8 = iota
+	HandshakeResMessageCode
+	HandshakeFinMessageCode
+	RegularMessageCode
+	AckMessageCode
+)
+
+const (
+	HandshakeSuccess uint8 = iota
+	HandshakeBackwardsCompatible
+	HandshakeIncompatible
+	HandshakeRequestCompatible
+)
+
+type SubcriptionInfo struct {
+	Channel string
+	Key     string
+}
+
+var (
+	ConnectionAlreadyExists = errors.New("Did not create a connection to the specified remote as a connection ")
+)
+
+type TLSError struct {
+	Location string
+	Err      error
+}
+
+func (e *TLSError) Unwrap() error {
+	return e.Err
+}
+
+func (e *TLSError) Error() string {
+	return e.Location + ": " + e.Err.Error()
+}
 
 // PUBLIC METHODS ------------------------------------------------------------------
 
-func (inst *Instance) NewConnection(addr ConnectionAddr) error {
+// Opens a TLS connection to the provided remote address. Attempts to complete a
+// TLS handshake, then a Tolliver handshake. If both are successful this function
+// creates a goroutine to listen for messages on the connection. Possible errors:
+// ConnectionAlreadyExists
+// TLSError
+func (inst *Instance) NewConnection(addr common.ConnectionAddr) error {
 	// Ignore connections which have already been made.
-	for _, v := range inst.connectionPool {
-		if slices.Equal(v.RemoteId[:], inst.instanceId[:]) {
-			return nil
+	for _, v := range inst.ConnectionPool {
+		if addressesEqual(v, addr) {
+			return common.ConnectionAlreadyExists
 		}
 	}
 
 	// Create TLS config object for instantiating connections.
 	tlsConfig := &tls.Config{
-		Certificates:       inst.instanceCertificates,
-		RootCAs:            &inst.certifcateAuthority,
+		Certificates: inst.InstanceCertificates,
+		RootCAs:      &inst.CertifcateAuthority,
+		// ServerName:   addr.Host,
 		InsecureSkipVerify: true,
 	}
 
-	println("Dialing TCP conn")
-
 	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
 	if err != nil {
-		panic(err)
+		return &common.TLSError{
+			Location: "Creating connection to remote",
+			Err:      err,
+		}
 	}
 
-	connInfo, handshakeErr := sendHandshake(conn, inst.instanceId, inst.subscriptions, addr.Host, addr.Port)
+	connInfo, handshakeErr := utils.SendHandshake(conn, inst.InstanceId, inst.Subscriptions, addr.Host, addr.Port)
 	if handshakeErr != nil {
 		panic(handshakeErr)
-		return handshakeErr
 	}
-
-	println("Made connection")
 
 	inst.connectionPool = append(inst.connectionPool, connInfo)
 
 	go handleConn(inst, &connInfo)
 	return nil
+}
+
+func addressesEqual(c connectionWrapper, a ConnectionAddr) bool {
+	return c.Hostname == a.Host && c.Port == a.Port
 }
 
 // Write the message to the database and all of the intended recipients, then attempt to send the message.
@@ -171,23 +250,4 @@ func (inst *Instance) initDatabase() error {
 
 func (inst *Instance) loadSubscriptions() {
 
-}
-
-func sendBytes(mes []byte, conn net.Conn) {
-	n, err := conn.Write(mes)
-	var tot = n
-
-	for err != nil || tot != len(mes) {
-		n, err = conn.Write(mes[tot:])
-		tot += n
-	}
-}
-
-func matches(msgSubscription, remoteSubscription SubcriptionInfo) bool {
-	if msgSubscription.Channel == "tolliver" {
-		return true
-	}
-
-	return (msgSubscription.Channel == remoteSubscription.Channel || remoteSubscription.Channel == "") &&
-		(msgSubscription.Key == remoteSubscription.Key || remoteSubscription.Key == "")
 }

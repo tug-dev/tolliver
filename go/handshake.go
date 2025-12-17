@@ -31,27 +31,18 @@ func sendHandshake(conn *tls.Conn, id uuid.UUID, subscriptions []SubcriptionInfo
 }
 
 func parseHandshakeResponse(r Reader, conn net.Conn) (uuid.UUID, []SubcriptionInfo, error) {
-	code, err := r.ReadByte()
+	var code byte
+	var version uint64
+	var id uuid.UUID
+	var errorCode byte
+
+	err := r.ReadAll(nil, &code, &version, &id, &errorCode)
 	if err != nil {
 		return uuid.UUID{}, nil, err
 	}
+
 	if code != HandshakeResMessageCode {
 		return uuid.UUID{}, nil, errors.New("Malformed handshake response")
-	}
-
-	version, err := r.ReadUint64()
-	if err != nil {
-		return uuid.UUID{}, nil, err
-	}
-
-	id, err := r.ReadUUID()
-	if err != nil {
-		return uuid.UUID{}, nil, err
-	}
-
-	errorCode, err := r.ReadByte()
-	if err != nil {
-		return uuid.UUID{}, nil, err
 	}
 
 	switch errorCode {

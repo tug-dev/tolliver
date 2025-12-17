@@ -12,6 +12,49 @@ type Reader struct {
 	*bufio.Reader
 }
 
+func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
+	var p = 0
+
+	for _, val := range destinations {
+		switch v := val.(type) {
+		case *uint64:
+			val, err := r.ReadUint64()
+			if err != nil {
+				return err
+			}
+
+			*v = val
+
+		case *uint32:
+			val, err := r.ReadUint32()
+			if err != nil {
+				return err
+			}
+
+			*v = val
+
+		case *string:
+			val, err := r.ReadString(lens[p])
+			if err != nil {
+				return err
+			}
+			p++
+
+			*v = val
+
+		case *uuid.UUID:
+			val, err := r.ReadUUID()
+			if err != nil {
+				return err
+			}
+
+			*v = val
+		}
+	}
+
+	return nil
+}
+
 func (r *Reader) ReadUint64() (uint64, error) {
 	b := make([]byte, 8)
 	_, err := io.ReadFull(r, b)
