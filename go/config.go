@@ -7,7 +7,6 @@ import (
 )
 
 const InitialConnectionCapacity = 5
-const TolliverVersion uint64 = 1
 
 var InvalidInstanceOptions = errors.New("Invalid instance options")
 

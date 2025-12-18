@@ -1,8 +1,8 @@
-package tolliver
+package connections
 
 import "net"
 
-func sendBytes(mes []byte, conn net.Conn) {
+func SendBytes(mes []byte, conn net.Conn) {
 	n, err := conn.Write(mes)
 	var tot = n
 

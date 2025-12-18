@@ -1,15 +1,21 @@
-package tolliver
+package binary
 
 import (
 	"bufio"
 	"encoding/binary"
 	"io"
+	"net"
 
 	"github.com/google/uuid"
+	"github.com/tug-dev/tolliver/go/common"
 )
 
 type Reader struct {
 	*bufio.Reader
+}
+
+func NewReader(conn net.Conn) Reader {
+	return Reader{bufio.NewReader(conn)}
 }
 
 func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
@@ -18,37 +24,43 @@ func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
 	for _, val := range destinations {
 		switch v := val.(type) {
 		case *uint64:
-			val, err := r.ReadUint64()
+			res, err := r.ReadUint64()
 			if err != nil {
 				return err
 			}
 
-			*v = val
+			*v = res
 
 		case *uint32:
-			val, err := r.ReadUint32()
+			res, err := r.ReadUint32()
 			if err != nil {
 				return err
 			}
 
-			*v = val
+			*v = res
 
 		case *string:
-			val, err := r.ReadString(lens[p])
+			res, err := r.ReadString(lens[p])
 			if err != nil {
 				return err
 			}
 			p++
 
-			*v = val
+			*v = res
 
 		case *uuid.UUID:
-			val, err := r.ReadUUID()
+			res, err := r.ReadUUID()
 			if err != nil {
 				return err
 			}
 
-			*v = val
+			*v = res
+
+		case *[]common.SubcriptionInfo:
+			err := r.ReadSubs(v)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -87,4 +99,36 @@ func (r *Reader) ReadUUID() (uuid.UUID, error) {
 	id, _ := uuid.FromBytes(b)
 
 	return id, nil
+}
+
+func (r *Reader) ReadSubs(dest *[]common.SubcriptionInfo) error {
+	num, err := r.ReadUint32()
+	if err != nil {
+		return err
+	}
+
+	*dest = make([]common.SubcriptionInfo, num)
+	for i := uint32(0); i < num; i++ {
+		chanLen, err := r.ReadUint32()
+		if err != nil {
+			return err
+		}
+		keyLen, err := r.ReadUint32()
+		if err != nil {
+			return err
+		}
+
+		channel, err := r.ReadString(chanLen)
+		if err != nil {
+			return err
+		}
+		key, err := r.ReadString(keyLen)
+		if err != nil {
+			return err
+		}
+
+		(*dest)[i] = common.SubcriptionInfo{Channel: channel, Key: key}
+	}
+
+	return nil
 }

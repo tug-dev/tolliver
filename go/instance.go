@@ -53,18 +53,6 @@ const (
 	AckMessageCode
 )
 
-const (
-	HandshakeSuccess uint8 = iota
-	HandshakeBackwardsCompatible
-	HandshakeIncompatible
-	HandshakeRequestCompatible
-)
-
-type SubcriptionInfo struct {
-	Channel string
-	Key     string
-}
-
 var (
 	ConnectionAlreadyExists = errors.New("Did not create a connection to the specified remote as a connection ")
 )
