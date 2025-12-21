@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 
 	"github.com/google/uuid"
-	"github.com/tug-dev/tolliver/go/common"
+	"github.com/tug-dev/tolliver/go/internal/common"
 )
 
 type Writer struct {
@@ -35,8 +35,14 @@ func (w *Writer) WriteAll(sources ...any) {
 		case uuid.UUID:
 			w.WriteUUID(val)
 
+		case string:
+			w.WriteString(val)
+
 		case []common.SubcriptionInfo:
 			w.WriteSubscriptions(val)
+
+		default:
+			panic("Unsupported type in writer")
 		}
 	}
 }
@@ -68,4 +74,8 @@ func (w *Writer) WriteSubscriptions(subs []common.SubcriptionInfo) {
 		w.data = append(w.data, []byte(v.Channel)...)
 		w.data = append(w.data, []byte(v.Key)...)
 	}
+}
+
+func (w *Writer) WriteString(s string) {
+	w.data = append(w.data, ([]byte)(s)...)
 }

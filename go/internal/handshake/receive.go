@@ -4,9 +4,9 @@ import (
 	"net"
 
 	"github.com/google/uuid"
-	"github.com/tug-dev/tolliver/go/binary"
-	"github.com/tug-dev/tolliver/go/common"
-	"github.com/tug-dev/tolliver/go/connections"
+	"github.com/tug-dev/tolliver/go/internal/binary"
+	"github.com/tug-dev/tolliver/go/internal/common"
+	"github.com/tug-dev/tolliver/go/internal/connections"
 )
 
 type handshakeReq struct {
@@ -42,7 +42,7 @@ func AwaitHandshake(conn net.Conn, instanceId uuid.UUID, subscriptions []common.
 	return req.Id, req.Subs, nil
 }
 
-func parseHandshakeRequest(r binary.Reader) (handshakeReq, error) {
+func parseHandshakeRequest(r *binary.Reader) (handshakeReq, error) {
 	var code byte
 	var version uint64
 	var id uuid.UUID
@@ -66,7 +66,7 @@ func buildHandshakeRes(id uuid.UUID, subscriptions []common.SubcriptionInfo, cod
 	return w.Join()
 }
 
-func parseHandshakeFinal(r binary.Reader) error {
+func parseHandshakeFinal(r *binary.Reader) error {
 	var code, status byte
 	err := r.ReadAll(nil, &code, &status)
 	if err != nil {

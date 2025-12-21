@@ -17,7 +17,9 @@ code 1, format: 8 byte big endian u64 tolliver version 16 bytes instance UUID(v7
 Handshake final
 code 2, format: status code 1 for backwards compatibility, 2 for failure (to match response codes)
 
-Subscription and unsubscription messages are to be sent as regular information messages with no key on the reserved "tolliver" channel (as such the API for tolliver should forbid this channel from being used by application level messages). The body of the message will have the format of 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - UTF-8 encoded channel name - UTF-8 encoded key name.
+Although there is no reason for the handshake to be sent again on an existing connection, if a handshake req message is received on an existing connection responses should be sent as normal. If unexpected handshake response or final messages are received they should simply be ignored by the receiving party.
+
+Subscription and unsubscription messages are to be sent as regular information messages with no key on the reserved "tolliver" channel (as such the API for tolliver should forbid this channel from being used by application level messages). The body of the message will have the format of 1 byte code - 0 for sub 1 for unsub, 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - UTF-8 encoded channel name - UTF-8 encoded key name.
 
 Regular message
 code 3, format: 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - 4 bytes big endian u32 body length (therefore max message size is 2gb alex i have genuinely no idea how you figured that u16 for message length gives max message size of 4 petabytes) - 4 bytes big endian u32 local message id (taken from the database, should be set as 2^31 -1 for an unreliable message) - UTF-8 encoded channel name - UTF-8 encoded key name - message body
@@ -25,17 +27,4 @@ code 3, format: 4 bytes big endian u32 channel name length - 4 bytes big endian 
 General acknowledgment
 code 4, format: 4 bytes big endian u32 id of acknowledged message
 
-API for the tolliver library
-(As much planning for me as anything)
-
-static library method - createInstance(options) returns a new tolliver instance based on the supplied options (TLS certificates, port to listen for incoming connections, database file to use, interval between attempting to reprocess any remaining tasks in the database, list of initial remotes)
-
-methods on the tolliver instance:
-NewConnection() - connect to a given host and try to perform the tolliver handshake. blocks indefinitely trying (and retrying) to create a TLS connection. only returns an error if the tolliver handshake fails or the TLS handshake fails due to incorrect certificates. 
-RemoveConnection() - remove a remote from the connection pool of the instance.
-
-These methods write the relevant information to the database and make one attempt to complete the action.
-Subscribe, Unsubscribe, Send, UnreliableSend
-
-RegisterCallback - registers a callback function on a specific channel key pair.
-
+The receiver sends an ack once per received message and pass the message to the application level code each time. The sender will resend their message at any interval they see fit until they have received the ack.

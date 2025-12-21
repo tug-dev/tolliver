@@ -3,239 +3,224 @@ package tolliver
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
-	_ "embed"
-	"fmt"
+	"errors"
 	"net"
+	"slices"
 	"strconv"
 
 	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
+	"github.com/tug-dev/tolliver/go/internal/binary"
+	"github.com/tug-dev/tolliver/go/internal/common"
+	"github.com/tug-dev/tolliver/go/internal/connections"
+	"github.com/tug-dev/tolliver/go/internal/handshake"
 )
 
 type Instance struct {
-	ConnectionPool       []connectionWrapper
-	RetryInterval        uint
-	InstanceCertificates []tls.Certificate
-	CertifcateAuthority  x509.CertPool
-	ListeningPort        int
-	DatabasePath         string
-	Database             *sql.DB
-	CloseListener        func()
-	Subscriptions        []SubcriptionInfo
-	InstanceId           uuid.UUID
+	certs     []tls.Certificate
+	authority *x509.CertPool
+	subs      []common.SubcriptionInfo
+	id        uuid.UUID
+	conns     []connections.Wrapper
+	callbacks map[*common.SubcriptionInfo]func([]byte)
 }
-
-type ConnectionAddr struct {
-	Host string
-	Port int
-}
-
-type Message []byte
-
-type connectionWrapper struct {
-	Connection    net.Conn
-	Hostname      string
-	Port          int
-	Subscriptions []SubcriptionInfo
-	RemoteId      uuid.UUID
-	R             Reader
-}
-
-//go:embed schema.sql
-var Schema string
-
-const (
-	HandshakeReqMessageCode uint8 = iota
-	HandshakeResMessageCode
-	HandshakeFinMessageCode
-	RegularMessageCode
-	AckMessageCode
-)
-
-var (
-	ConnectionAlreadyExists = errors.New("Did not create a connection to the specified remote as a connection ")
-)
 
 type TLSError struct {
-	Location string
-	Err      error
+	location string
+	err      error
 }
 
-func (e *TLSError) Unwrap() error {
-	return e.Err
+func (t *TLSError) Error() string {
+	return t.location + ": " + t.err.Error()
 }
 
-func (e *TLSError) Error() string {
-	return e.Location + ": " + e.Err.Error()
+func (t *TLSError) Unwrap() error {
+	return t.err
 }
+
+var ConnectionAlreadyExists = errors.New("This instance already has a connection to the requested remote address")
 
 // PUBLIC METHODS ------------------------------------------------------------------
-
-// Opens a TLS connection to the provided remote address. Attempts to complete a
-// TLS handshake, then a Tolliver handshake. If both are successful this function
-// creates a goroutine to listen for messages on the connection. Possible errors:
-// ConnectionAlreadyExists
-// TLSError
-func (inst *Instance) NewConnection(addr common.ConnectionAddr) error {
-	// Ignore connections which have already been made.
-	for _, v := range inst.ConnectionPool {
-		if addressesEqual(v, addr) {
-			return common.ConnectionAlreadyExists
-		}
-	}
-
-	// Create TLS config object for instantiating connections.
-	tlsConfig := &tls.Config{
-		Certificates: inst.InstanceCertificates,
-		RootCAs:      &inst.CertifcateAuthority,
-		// ServerName:   addr.Host,
-		InsecureSkipVerify: true,
-	}
-
-	conn, err := tls.Dial("tcp", addr.Host+":"+strconv.Itoa(addr.Port), tlsConfig)
+func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) error {
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName}
+	conn, err := tls.Dial("tcp", addr.String(), opts)
 	if err != nil {
-		return &common.TLSError{
-			Location: "Creating connection to remote",
-			Err:      err,
+		return &TLSError{
+			location: "Creating connection to " + addr.String(),
+			err:      err,
 		}
 	}
 
-	connInfo, handshakeErr := utils.SendHandshake(conn, inst.InstanceId, inst.Subscriptions, addr.Host, addr.Port)
-	if handshakeErr != nil {
-		panic(handshakeErr)
+	remId, remSubs, err := handshake.SendTolliverHandshake(conn, inst.id, inst.subs)
+	if err != nil {
+		return err
 	}
 
-	inst.connectionPool = append(inst.connectionPool, connInfo)
+	for _, v := range inst.conns {
+		if slices.Equal(remId[:], v.Id[:]) {
+			return nil
+		}
+	}
 
-	go handleConn(inst, &connInfo)
+	inst.conns = append(inst.conns, connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
+	go inst.handleConn(binary.NewReader(conn), conn, remId)
 	return nil
 }
 
-func addressesEqual(c connectionWrapper, a ConnectionAddr) bool {
-	return c.Hostname == a.Host && c.Port == a.Port
-}
-
-// Write the message to the database and all of the intended recipients, then attempt to send the message.
-func (inst *Instance) Send(msg Message, channel, key string) {
-
-}
-
-func (inst *Instance) UnreliableSend(msg Message, channel, key string) {
-
-}
-
 func (inst *Instance) Subscribe(channel, key string) {
-
+	inst.sendAll(buildSub(channel, key))
 }
 
 func (inst *Instance) Unsubscribe(channel, key string) {
 
 }
 
-func (inst *Instance) RegisterCallback(cb func(Message), channel, key string) {
+func (inst *Instance) Register(channel, key string, cb func([]byte)) {
 
 }
 
-// INTERNAL METHODS -----------------------------------------------------------------
-
-func (inst *Instance) processDatabase() {
-}
-
-func (inst *Instance) listenOn(port int) error {
-	tlsConfig := &tls.Config{
-		Certificates:       inst.instanceCertificates,
-		RootCAs:            &inst.certifcateAuthority,
-		InsecureSkipVerify: true,
-	}
-
-	lst, err := tls.Listen("tcp", ":"+strconv.Itoa(port), tlsConfig)
+func (inst *Instance) listenOn(port uint16) error {
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority}
+	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(int(port)), opts)
 	if err != nil {
+		panic(err)
 		return err
 	}
 
-	go handleListener(inst, lst)
+	go connections.HandleListener(lst, inst.awaitHandshake)
 
-	inst.closeListener = func() {
-		err = lst.Close()
-		for err != nil {
-			err = lst.Close()
-		}
-	}
-
-	return nil
+	return err
 }
 
-func handleListener(inst *Instance, lst net.Listener) {
-	for {
-		conn, err := lst.Accept()
-		if err != nil {
-			continue
-		}
-		println("Accepted connection")
-
-		connWrap, handshakeErr := awaitHandshake(conn, inst.instanceId, inst.subscriptions)
-		if handshakeErr != nil {
-			println(err)
-			continue
-		}
-
-		println("Finished handshake")
-
-		go handleConn(inst, &connWrap)
-	}
-}
-
-func handleConn(inst *Instance, conn *connectionWrapper) {
-	for {
-		buf := make([]byte, 1024)
-		n, err := conn.Connection.Read(buf)
-		if err != nil {
-			break
-		}
-
-		inst.handleMessage(buf[:n], conn)
-	}
-}
-
-func (inst *Instance) handleMessage(raw []byte, conn *connectionWrapper) {
-	fmt.Printf("Messaage from %08b\n", conn.RemoteId)
-	fmt.Printf("%08b\n", raw)
-
-}
-
-// Opens the database and ensures it is initialised.
-func (inst *Instance) initDatabase() error {
-	db, err := sql.Open("sqlite", inst.databasePath)
-
+func (inst *Instance) awaitHandshake(conn net.Conn) {
+	remId, remSubs, err := handshake.AwaitHandshake(conn, inst.id, inst.subs)
 	if err != nil {
-		return err
+		return
 	}
 
-	db.Exec(string(Schema))
-
-	rows, qErr := db.Query("select uuid from instance")
-
-	if qErr != nil {
-		return qErr
-	}
-
-	if !rows.Next() {
-		instanceId, _ := uuid.NewV7()
-		idBlob, _ := instanceId.MarshalBinary()
-		inst.instanceId = instanceId
-
-		_, insErr := db.Exec("insert into instance (uuid) values (?)", idBlob)
-		if insErr != nil {
-			panic(insErr.Error())
+	// TODO: How do we want to handle this. Could overwrite existing conn / have slice of conns and send to all.
+	for _, v := range inst.conns {
+		if slices.Equal(remId[:], v.Id[:]) {
+			return
 		}
+	}
+
+	inst.conns = append(inst.conns, connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
+	go inst.handleConn(binary.NewReader(conn), conn, remId)
+}
+
+func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) {
+	for {
+		mesType, err := r.ReadByte()
+		if err != nil {
+			continue
+		}
+
+		switch mesType {
+		case 0:
+			// TODO: Re send handshake
+		case 1:
+			fallthrough
+		case 2:
+		case 3:
+			// Regular message
+			inst.processRegularMessage(r, conn, id)
+		case 4:
+			// Ack
+		}
+	}
+}
+
+func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
+	var chanLen, keyLen, bodyLen, mesId uint32
+	var channel, key string
+	err := r.ReadAll(nil, &chanLen, &keyLen, &mesId)
+	if err != nil {
+		return
+	}
+
+	err = r.ReadAll([]uint32{chanLen, keyLen}, channel, key)
+	if err != nil {
+		return
+	}
+
+	if channel == "tolliver" {
+		inst.systemMessage(r, id, bodyLen)
 	} else {
-		rows.Scan(&inst.instanceId)
+		body := make([]byte, bodyLen)
+		r.FillBuf(body)
+
+		for k, v := range inst.callbacks {
+			if k.Channel == channel && k.Key == key {
+				v(body)
+			}
+		}
 	}
 
+	// Send ack
+	ack := buildAck(mesId)
+	connections.SendBytes(ack, conn)
+}
+
+func buildAck(id uint32) []byte {
+	w := binary.NewWriter()
+	w.WriteAll(byte(4), id)
+	return w.Join()
+}
+
+func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLength uint32) {
+	var code byte
+	var chanLen, keyLen uint32
+	err := r.ReadAll(nil, &code, &chanLen, &keyLen)
+	if err != nil || chanLen+keyLen+9 != expectedLength || !(code == 0 || code == 1) {
+		return
+	}
+
+	var channel, key string
+	err = r.ReadAll([]uint32{chanLen, keyLen}, channel, key)
+	if err != nil {
+		return
+	}
+
+	for _, v := range inst.conns {
+		if slices.Equal(v.Id[:], id[:]) {
+			if code == 0 {
+				v.Subscriptions = append(v.Subscriptions, common.SubcriptionInfo{Channel: channel, Key: key})
+			}
+			if code == 1 {
+				idx := -1
+				for i, s := range v.Subscriptions {
+					if s.Channel == channel && s.Key == key {
+						idx = i
+						break
+					}
+				}
+
+				if idx != -1 {
+					v.Subscriptions[idx] = v.Subscriptions[len(v.Subscriptions)-1]
+					v.Subscriptions = v.Subscriptions[:len(v.Subscriptions)-1]
+				}
+			}
+			return
+		}
+	}
+}
+
+func buildSub(channel, key string) []byte {
+	w := binary.NewWriter()
+	w.WriteAll(byte(0), uint32(len(channel)), uint32(len(key)), channel, key)
+	return w.Join()
+}
+
+func buildMes(body []byte, id uint32, channel, key string) []byte {
 	return nil
 }
 
-func (inst *Instance) loadSubscriptions() {
+func (inst *Instance) sendAll(body []byte, channel, key string) {
+	// TODO: make message durable
+	id := uint32(1)
+	mes := buildMes(body, id, channel, key)
 
+	for _, v := range inst.conns {
+		// if matches
+	}
 }

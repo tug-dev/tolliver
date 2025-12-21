@@ -7,15 +7,15 @@ import (
 	"net"
 
 	"github.com/google/uuid"
-	"github.com/tug-dev/tolliver/go/common"
+	"github.com/tug-dev/tolliver/go/internal/common"
 )
 
 type Reader struct {
 	*bufio.Reader
 }
 
-func NewReader(conn net.Conn) Reader {
-	return Reader{bufio.NewReader(conn)}
+func NewReader(conn net.Conn) *Reader {
+	return &Reader{bufio.NewReader(conn)}
 }
 
 func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
@@ -86,6 +86,11 @@ func (r *Reader) ReadString(len uint32) (string, error) {
 	_, err := io.ReadFull(r, b)
 
 	return string(b), err
+}
+
+func (r *Reader) FillBuf(buf []byte) error {
+	_, err := io.ReadFull(r, buf)
+	return err
 }
 
 func (r *Reader) ReadUUID() (uuid.UUID, error) {

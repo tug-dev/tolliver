@@ -4,9 +4,9 @@ import (
 	"crypto/tls"
 
 	"github.com/google/uuid"
-	"github.com/tug-dev/tolliver/go/binary"
-	"github.com/tug-dev/tolliver/go/common"
-	"github.com/tug-dev/tolliver/go/connections"
+	"github.com/tug-dev/tolliver/go/internal/binary"
+	"github.com/tug-dev/tolliver/go/internal/common"
+	"github.com/tug-dev/tolliver/go/internal/connections"
 )
 
 type handshakeRes struct {
@@ -57,7 +57,7 @@ func buildHandshakeFin(code byte) []byte {
 	return w.Join()
 }
 
-func parseHandshakeResponse(r binary.Reader) (handshakeRes, error) {
+func parseHandshakeResponse(r *binary.Reader) (handshakeRes, error) {
 	var code byte
 	var version uint64
 	var id uuid.UUID
