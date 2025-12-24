@@ -3,6 +3,7 @@ package binary
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 
@@ -23,6 +24,14 @@ func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
 
 	for _, val := range destinations {
 		switch v := val.(type) {
+		case *byte:
+			res, err := r.ReadByte()
+			if err != nil {
+				return err
+			}
+
+			*v = res
+
 		case *uint64:
 			res, err := r.ReadUint64()
 			if err != nil {
@@ -56,11 +65,15 @@ func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
 
 			*v = res
 
-		case *[]common.SubcriptionInfo:
+		case []common.SubcriptionInfo:
 			err := r.ReadSubs(v)
 			if err != nil {
 				return err
 			}
+
+		default:
+			fmt.Printf("%t\n", v)
+			panic("Unsupported reader type")
 		}
 	}
 
@@ -81,8 +94,8 @@ func (r *Reader) ReadUint32() (uint32, error) {
 	return binary.BigEndian.Uint32(b), err
 }
 
-func (r *Reader) ReadString(len uint32) (string, error) {
-	b := make([]byte, len)
+func (r *Reader) ReadString(length uint32) (string, error) {
+	b := make([]byte, length)
 	_, err := io.ReadFull(r, b)
 
 	return string(b), err
@@ -106,14 +119,14 @@ func (r *Reader) ReadUUID() (uuid.UUID, error) {
 	return id, nil
 }
 
-func (r *Reader) ReadSubs(dest *[]common.SubcriptionInfo) error {
+func (r *Reader) ReadSubs(dest []common.SubcriptionInfo) error {
 	num, err := r.ReadUint32()
 	if err != nil {
 		return err
 	}
 
-	*dest = make([]common.SubcriptionInfo, num)
-	for i := uint32(0); i < num; i++ {
+	dest = make([]common.SubcriptionInfo, num)
+	for i := range num {
 		chanLen, err := r.ReadUint32()
 		if err != nil {
 			return err
@@ -132,7 +145,7 @@ func (r *Reader) ReadSubs(dest *[]common.SubcriptionInfo) error {
 			return err
 		}
 
-		(*dest)[i] = common.SubcriptionInfo{Channel: channel, Key: key}
+		dest[i] = common.SubcriptionInfo{Channel: channel, Key: key}
 	}
 
 	return nil

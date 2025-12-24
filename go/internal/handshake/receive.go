@@ -48,10 +48,11 @@ func parseHandshakeRequest(r *binary.Reader) (handshakeReq, error) {
 	var id uuid.UUID
 	var subs []common.SubcriptionInfo
 
-	err := r.ReadAll(nil, &code, &version, &id, &subs)
+	err := r.ReadAll(nil, &code, &version, &id, subs)
 	if err != nil {
 		return handshakeReq{}, err
 	}
+
 	if code != HandshakeReqMessageCode {
 		return handshakeReq{}, UnexpectedMessageCode
 	}

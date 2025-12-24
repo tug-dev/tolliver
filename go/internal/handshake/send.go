@@ -64,7 +64,7 @@ func parseHandshakeResponse(r *binary.Reader) (handshakeRes, error) {
 	var errorCode byte
 	var subs []common.SubcriptionInfo
 
-	err := r.ReadAll(nil, &code, &version, &id, &errorCode, &subs)
+	err := r.ReadAll(nil, &code, &version, &id, &errorCode, subs)
 	if err != nil {
 		return handshakeRes{}, err
 	}

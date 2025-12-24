@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"slices"
 	"strconv"
@@ -41,7 +42,7 @@ var ConnectionAlreadyExists = errors.New("This instance already has a connection
 
 // PUBLIC METHODS ------------------------------------------------------------------
 func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) error {
-	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName}
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName, InsecureSkipVerify: true}
 	conn, err := tls.Dial("tcp", addr.String(), opts)
 	if err != nil {
 		return &TLSError{
@@ -62,12 +63,13 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 	}
 
 	inst.conns = append(inst.conns, connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
+	println("Outgoing handle")
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 	return nil
 }
 
 func (inst *Instance) Subscribe(channel, key string) {
-	inst.sendAll(buildSub(channel, key))
+	inst.sendAll(buildSub(channel, key), "tolliver", "")
 }
 
 func (inst *Instance) Unsubscribe(channel, key string) {
@@ -79,10 +81,9 @@ func (inst *Instance) Register(channel, key string, cb func([]byte)) {
 }
 
 func (inst *Instance) listenOn(port uint16) error {
-	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority}
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, InsecureSkipVerify: true}
 	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(int(port)), opts)
 	if err != nil {
-		panic(err)
 		return err
 	}
 
@@ -105,12 +106,16 @@ func (inst *Instance) awaitHandshake(conn net.Conn) {
 	}
 
 	inst.conns = append(inst.conns, connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
+	println("Incoming handle")
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 }
 
 func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) {
+	println("Handle called")
+	// fmt.Printf("Handling connection to node with id %08b \n", id)
 	for {
 		mesType, err := r.ReadByte()
+		fmt.Printf("%08b \n", mesType)
 		if err != nil {
 			continue
 		}
@@ -138,7 +143,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		return
 	}
 
-	err = r.ReadAll([]uint32{chanLen, keyLen}, channel, key)
+	err = r.ReadAll([]uint32{chanLen, keyLen}, &channel, &key)
 	if err != nil {
 		return
 	}
@@ -176,10 +181,12 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 	}
 
 	var channel, key string
-	err = r.ReadAll([]uint32{chanLen, keyLen}, channel, key)
+	err = r.ReadAll([]uint32{chanLen, keyLen}, &channel, &key)
 	if err != nil {
 		return
 	}
+
+	println(channel + " " + key)
 
 	for _, v := range inst.conns {
 		if slices.Equal(v.Id[:], id[:]) {
@@ -212,7 +219,9 @@ func buildSub(channel, key string) []byte {
 }
 
 func buildMes(body []byte, id uint32, channel, key string) []byte {
-	return nil
+	w := binary.NewWriter()
+	w.WriteAll(byte(3), uint32(len(channel)), uint32(len(key)), uint32(len(body)), id, channel, key, body)
+	return w.Join()
 }
 
 func (inst *Instance) sendAll(body []byte, channel, key string) {
@@ -221,6 +230,8 @@ func (inst *Instance) sendAll(body []byte, channel, key string) {
 	mes := buildMes(body, id, channel, key)
 
 	for _, v := range inst.conns {
-		// if matches
+		if channel == "tolliver" || slices.Contains(v.Subscriptions, common.SubcriptionInfo{Channel: channel, Key: key}) {
+			connections.SendBytes(mes, v.Conn)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package connections
 
 import (
+	"fmt"
 	"net"
 
 	"github.com/google/uuid"
@@ -25,7 +26,11 @@ func SendBytes(mes []byte, conn net.Conn) {
 
 func HandleListener(lst net.Listener, handle func(conn net.Conn)) {
 	for {
-		conn, _ := lst.Accept()
+		conn, err := lst.Accept()
+		if err != nil {
+			fmt.Printf("%e\n", err)
+			continue
+		}
 		handle(conn)
 	}
 }

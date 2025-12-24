@@ -41,6 +41,9 @@ func (w *Writer) WriteAll(sources ...any) {
 		case []common.SubcriptionInfo:
 			w.WriteSubscriptions(val)
 
+		case []byte:
+			w.WriteBytes(val)
+
 		default:
 			panic("Unsupported type in writer")
 		}
@@ -69,13 +72,17 @@ func (w *Writer) WriteUUID(id uuid.UUID) {
 
 func (w *Writer) WriteSubscriptions(subs []common.SubcriptionInfo) {
 	for _, v := range subs {
-		w.WriteUint32(uint32(len(v.Channel)))
-		w.WriteUint32(uint32(len(v.Key)))
+		w.WriteUint32(uint32(len([]byte(v.Channel))))
+		w.WriteUint32(uint32(len([]byte(v.Key))))
 		w.data = append(w.data, []byte(v.Channel)...)
 		w.data = append(w.data, []byte(v.Key)...)
 	}
 }
 
 func (w *Writer) WriteString(s string) {
-	w.data = append(w.data, ([]byte)(s)...)
+	w.data = append(w.data, []byte(s)...)
+}
+
+func (w *Writer) WriteBytes(b []byte) {
+	w.data = append(w.data, b...)
 }
