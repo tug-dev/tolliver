@@ -144,6 +144,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	}
 
 	err = r.ReadAll([]uint32{chanLen, keyLen}, &channel, &key)
+	println(chanLen, channel)
 	if err != nil {
 		return
 	}
