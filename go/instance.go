@@ -13,6 +13,7 @@ import (
 	"github.com/tug-dev/tolliver/go/internal/binary"
 	"github.com/tug-dev/tolliver/go/internal/common"
 	"github.com/tug-dev/tolliver/go/internal/connections"
+	"github.com/tug-dev/tolliver/go/internal/db"
 	"github.com/tug-dev/tolliver/go/internal/handshake"
 )
 
@@ -23,6 +24,7 @@ type Instance struct {
 	id        uuid.UUID
 	conns     []*connections.Wrapper
 	callbacks map[*common.SubcriptionInfo][]func([]byte)
+	dbPath    string
 }
 
 type TLSError struct {
@@ -145,8 +147,9 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 		case 0:
 			// TODO: Re send handshake
 		case 1:
-			// fallthrough
+			// Handshake
 		case 2:
+			// Handshake
 		case 3:
 			// Regular message
 			inst.processRegularMessage(r, conn, id)
@@ -158,7 +161,12 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 }
 
 func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
+	mesId, err := r.ReadUint32()
+	if err != nil {
+		return
+	}
 
+	db.Ack(mesId, id, inst.dbPath)
 }
 
 func (inst *Instance) Debug() {
@@ -269,20 +277,30 @@ func buildMes(body []byte, id uint32, channel, key string) []byte {
 	return w.Join()
 }
 
-func (inst *Instance) store(mes []byte, channel, key string) uint32 {
-	return 1
-}
-
-func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
-	id := uint32(4294967295)
-	if reliable {
-		id = inst.store(body, channel, key)
-	}
-	mes := buildMes(body, id, channel, key)
+func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UUID) {
+	conns := make([]net.Conn, 0, len(inst.conns))
+	ids := make([]uuid.UUID, 0, len(inst.conns))
 
 	for _, v := range inst.conns {
 		if channel == "tolliver" || slices.Contains(v.Subscriptions, common.SubcriptionInfo{Channel: channel, Key: key}) {
-			connections.SendBytes(mes, v.Conn)
+			conns = append(conns, v.Conn)
+			ids = append(ids, v.Id)
 		}
+	}
+
+	return conns, ids
+}
+
+func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
+	recipientConns, recipientIds := inst.findRecipients(channel, key)
+
+	id := uint32(4294967295)
+	if reliable {
+		id = db.SaveMessage(body, recipientIds, channel, key, inst.dbPath)
+	}
+	mes := buildMes(body, id, channel, key)
+
+	for _, v := range recipientConns {
+		connections.SendBytes(mes, v)
 	}
 }

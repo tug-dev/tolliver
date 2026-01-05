@@ -37,6 +37,7 @@ func TestHandshake(t *testing.T) {
 		Port:         8000,
 		CA:           caPool,
 		InstanceCert: &cert1,
+		DatabasePath: "inst1.db",
 	})
 	if err != nil {
 		t.Error(err)
@@ -46,6 +47,7 @@ func TestHandshake(t *testing.T) {
 		Port:         9000,
 		CA:           caPool,
 		InstanceCert: &cert2,
+		DatabasePath: "inst2.db",
 	})
 	if err != nil {
 		t.Error(err)
@@ -57,10 +59,14 @@ func TestHandshake(t *testing.T) {
 	}
 	inst2.Subscribe("test", "key")
 	inst2.Register("test", "key", func(m []byte) {
-		fmt.Printf("% x\n", m)
+		fmt.Printf("Received message: %s\n", string(m))
 	})
 	time.Sleep(1 * time.Millisecond)
-	inst1.UnreliableSend("test", "key", []byte{0x00, 0x01, 0xff})
 
-	time.Sleep(1 * time.Millisecond)
+	inst1.Debug()
+	println("")
+	inst2.Debug()
+
+	inst1.Send("test", "key", []byte("Hello World!"))
+	time.Sleep(50 * time.Millisecond)
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/tug-dev/tolliver/go/internal/connections"
+	"github.com/tug-dev/tolliver/go/internal/db"
 )
 
 var InvalidInstanceOptions = errors.New("Invalid instance options")
@@ -37,6 +38,9 @@ func NewInstance(opts *InstanceOptions) (*Instance, error) {
 		certs:     []tls.Certificate{*opts.InstanceCert},
 		authority: opts.CA,
 	}
+	i.id = db.Init(opts.DatabasePath)
+	i.dbPath = opts.DatabasePath
+
 	i.conns = make([]*connections.Wrapper, 0, 10)
 	i.listenOn(opts.Port)
 
