@@ -3,7 +3,6 @@ package binary
 import (
 	"bufio"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 
@@ -72,7 +71,6 @@ func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
 			}
 
 		default:
-			fmt.Printf("%t\n", v)
 			panic("Unsupported reader type")
 		}
 	}

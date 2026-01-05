@@ -3,9 +3,11 @@ package tolliver_test
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	tolliver "github.com/tug-dev/tolliver/go"
 )
@@ -14,7 +16,6 @@ import (
 // TODO: Switch to buffer pool
 
 func TestHandshake(t *testing.T) {
-	t.Log("Started test")
 	cert1, err := tls.LoadX509KeyPair("./exampleCerts/instance1.crt", "./exampleCerts/instance1.key")
 	if err != nil {
 		t.Error(err)
@@ -37,7 +38,6 @@ func TestHandshake(t *testing.T) {
 		CA:           caPool,
 		InstanceCert: &cert1,
 	})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -47,7 +47,6 @@ func TestHandshake(t *testing.T) {
 		CA:           caPool,
 		InstanceCert: &cert2,
 	})
-
 	if err != nil {
 		t.Error(err)
 	}
@@ -57,7 +56,11 @@ func TestHandshake(t *testing.T) {
 		t.Error(err)
 	}
 	inst2.Subscribe("test", "key")
-	for {
+	inst2.Register("test", "key", func(m []byte) {
+		fmt.Printf("% x\n", m)
+	})
+	time.Sleep(1 * time.Millisecond)
+	inst1.UnreliableSend("test", "key", []byte{0x00, 0x01, 0xff})
 
-	}
+	time.Sleep(1 * time.Millisecond)
 }

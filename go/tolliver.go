@@ -4,6 +4,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+
+	"github.com/tug-dev/tolliver/go/internal/connections"
 )
 
 var InvalidInstanceOptions = errors.New("Invalid instance options")
@@ -35,6 +37,7 @@ func NewInstance(opts *InstanceOptions) (*Instance, error) {
 		certs:     []tls.Certificate{*opts.InstanceCert},
 		authority: opts.CA,
 	}
+	i.conns = make([]*connections.Wrapper, 0, 10)
 	i.listenOn(opts.Port)
 
 	return &i, nil

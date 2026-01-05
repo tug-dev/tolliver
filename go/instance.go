@@ -21,8 +21,8 @@ type Instance struct {
 	authority *x509.CertPool
 	subs      []common.SubcriptionInfo
 	id        uuid.UUID
-	conns     []connections.Wrapper
-	callbacks map[*common.SubcriptionInfo]func([]byte)
+	conns     []*connections.Wrapper
+	callbacks map[*common.SubcriptionInfo][]func([]byte)
 }
 
 type TLSError struct {
@@ -62,22 +62,47 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 		}
 	}
 
-	inst.conns = append(inst.conns, connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
-	println("Outgoing handle")
+	inst.conns = append(inst.conns, &connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 	return nil
 }
 
 func (inst *Instance) Subscribe(channel, key string) {
-	inst.sendAll(buildSub(channel, key), "tolliver", "")
+	if channel == "tolliver" {
+		return
+	}
+
+	inst.send(buildSub(channel, key), "tolliver", "", true)
 }
 
 func (inst *Instance) Unsubscribe(channel, key string) {
+	if channel == "tolliver" {
+		return
+	}
 
+	inst.send(buildUnSub(channel, key), "tolliver", "", true)
 }
 
 func (inst *Instance) Register(channel, key string, cb func([]byte)) {
+	if inst.callbacks == nil {
+		inst.callbacks = make(map[*common.SubcriptionInfo][]func([]byte))
+	}
 
+	w := &common.SubcriptionInfo{Channel: channel, Key: key}
+
+	if inst.callbacks[w] == nil {
+		inst.callbacks[w] = make([]func([]byte), 0, 5)
+	}
+
+	inst.callbacks[w] = append(inst.callbacks[w], cb)
+}
+
+func (inst *Instance) Send(channel, key string, mes []byte) {
+	inst.send(mes, channel, key, true)
+}
+
+func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
+	inst.send(mes, channel, key, false)
 }
 
 func (inst *Instance) listenOn(port uint16) error {
@@ -105,17 +130,13 @@ func (inst *Instance) awaitHandshake(conn net.Conn) {
 		}
 	}
 
-	inst.conns = append(inst.conns, connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
-	println("Incoming handle")
+	inst.conns = append(inst.conns, &connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 }
 
 func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) {
-	println("Handle called")
-	// fmt.Printf("Handling connection to node with id %08b \n", id)
 	for {
 		mesType, err := r.ReadByte()
-		fmt.Printf("%08b \n", mesType)
 		if err != nil {
 			continue
 		}
@@ -124,29 +145,44 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 		case 0:
 			// TODO: Re send handshake
 		case 1:
-			fallthrough
+			// fallthrough
 		case 2:
 		case 3:
 			// Regular message
 			inst.processRegularMessage(r, conn, id)
 		case 4:
-			// Ack
+			inst.proccessAck(r, id)
+			// ack
 		}
+	}
+}
+
+func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
+
+}
+
+func (inst *Instance) Debug() {
+	fmt.Printf("Tolliver instance with ID % x\n", inst.id[:])
+	fmt.Printf("Connections (%d):\n", len(inst.conns))
+	for i, v := range inst.conns {
+		fmt.Printf("(%d) Remote ID % x, Subs: ", i, v.Id[:])
+		for _, s := range v.Subscriptions {
+			fmt.Printf("(%s, %s), ", s.Channel, s.Key)
+		}
+		fmt.Printf("\n")
 	}
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
 	var chanLen, keyLen, bodyLen, mesId uint32
 	var channel, key string
-	err := r.ReadAll(nil, &chanLen, &keyLen, &mesId)
+	err := r.ReadAll(nil, &chanLen, &keyLen, &bodyLen, &mesId)
 	if err != nil {
 		return
 	}
 
 	err = r.ReadAll([]uint32{chanLen, keyLen}, &channel, &key)
-	println(chanLen, channel)
 	if err != nil {
-		return
 	}
 
 	if channel == "tolliver" {
@@ -157,14 +193,18 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 
 		for k, v := range inst.callbacks {
 			if k.Channel == channel && k.Key == key {
-				v(body)
+				for _, cb := range v {
+					cb(body)
+				}
 			}
 		}
 	}
 
-	// Send ack
-	ack := buildAck(mesId)
-	connections.SendBytes(ack, conn)
+	if mesId != uint32(4294967295) {
+		// Send ack
+		ack := buildAck(mesId)
+		connections.SendBytes(ack, conn)
+	}
 }
 
 func buildAck(id uint32) []byte {
@@ -186,8 +226,6 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 	if err != nil {
 		return
 	}
-
-	println(channel + " " + key)
 
 	for _, v := range inst.conns {
 		if slices.Equal(v.Id[:], id[:]) {
@@ -219,15 +257,27 @@ func buildSub(channel, key string) []byte {
 	return w.Join()
 }
 
+func buildUnSub(channel, key string) []byte {
+	w := binary.NewWriter()
+	w.WriteAll(byte(1), uint32(len(channel)), uint32(len(key)), channel, key)
+	return w.Join()
+}
+
 func buildMes(body []byte, id uint32, channel, key string) []byte {
 	w := binary.NewWriter()
 	w.WriteAll(byte(3), uint32(len(channel)), uint32(len(key)), uint32(len(body)), id, channel, key, body)
 	return w.Join()
 }
 
-func (inst *Instance) sendAll(body []byte, channel, key string) {
-	// TODO: make message durable
-	id := uint32(1)
+func (inst *Instance) store(mes []byte, channel, key string) uint32 {
+	return 1
+}
+
+func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
+	id := uint32(4294967295)
+	if reliable {
+		id = inst.store(body, channel, key)
+	}
 	mes := buildMes(body, id, channel, key)
 
 	for _, v := range inst.conns {

@@ -22,7 +22,7 @@ Although there is no reason for the handshake to be sent again on an existing co
 Subscription and unsubscription messages are to be sent as regular information messages with no key on the reserved "tolliver" channel (as such the API for tolliver should forbid this channel from being used by application level messages). The body of the message will have the format of 1 byte code - 0 for sub 1 for unsub, 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - UTF-8 encoded channel name - UTF-8 encoded key name.
 
 Regular message
-code 3, format: 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - 4 bytes big endian u32 body length (therefore max message size is 2gb alex i have genuinely no idea how you figured that u16 for message length gives max message size of 4 petabytes) - 4 bytes big endian u32 local message id (taken from the database, should be set as 2^31 -1 for an unreliable message) - UTF-8 encoded channel name - UTF-8 encoded key name - message body
+code 3, format: 4 bytes big endian u32 channel name length - 4 bytes big endian u32 key name length - 4 bytes big endian u32 body length (therefore max message size is 2gb alex i have genuinely no idea how you figured that u16 for message length gives max message size of 4 petabytes) - 4 bytes big endian u32 local message id (taken from the database, should be set as 2^32 -1 for an unreliable message) - UTF-8 encoded channel name - UTF-8 encoded key name - message body
 
 General acknowledgment
 code 4, format: 4 bytes big endian u32 id of acknowledged message
