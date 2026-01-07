@@ -11,15 +11,8 @@ import (
 //go:embed schema.sql
 var schema string
 
-func Init(path string) uuid.UUID {
-	// TODO: don't make multiple connections thats silly change this
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(schema)
+func Init(db *sql.DB) uuid.UUID {
+	_, err := db.Exec(schema)
 	if err != nil {
 		panic(err)
 	}

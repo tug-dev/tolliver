@@ -7,13 +7,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func SaveMessage(mes []byte, recipients []uuid.UUID, channel, key, dbPath string) uint32 {
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
+func SaveMessage(mes []byte, recipients []uuid.UUID, channel, key string, db *sql.DB) uint32 {
 	res, err := db.Exec("INSERT INTO message (channel, key, data) VALUES ($1, $2, $3)", channel, key, mes)
 	if err != nil {
 		panic(err)

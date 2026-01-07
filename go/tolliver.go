@@ -3,12 +3,14 @@ package tolliver
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"errors"
 	"net"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/tug-dev/tolliver/go/internal/db"
+	_ "modernc.org/sqlite"
 )
 
 var InvalidInstanceOptions = errors.New("Invalid instance options")
@@ -43,8 +45,14 @@ func NewInstance(opts *InstanceOptions) (*Instance, error) {
 		certs:     []tls.Certificate{*opts.InstanceCert},
 		authority: opts.CA,
 	}
-	i.id = db.Init(opts.DatabasePath)
-	i.dbPath = opts.DatabasePath
+
+	database, err := sql.Open("sqlite", opts.DatabasePath)
+	if err != nil {
+		return &Instance{}, err
+	}
+
+	i.id = db.Init(database)
+	i.db = database
 
 	i.conns = make(map[uuid.UUID]net.Conn)
 	i.listenOn(opts.Port)
