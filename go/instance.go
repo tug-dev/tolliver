@@ -4,10 +4,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"net"
-	"slices"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tug-dev/tolliver/go/internal/binary"
@@ -22,7 +21,7 @@ type Instance struct {
 	authority *x509.CertPool
 	subs      []common.SubcriptionInfo
 	id        uuid.UUID
-	conns     []*connections.Wrapper
+	conns     map[uuid.UUID]net.Conn
 	callbacks map[*common.SubcriptionInfo][]func([]byte)
 	dbPath    string
 }
@@ -53,18 +52,18 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 		}
 	}
 
-	remId, remSubs, err := handshake.SendTolliverHandshake(conn, inst.id, inst.subs)
+	remId, _, err := handshake.SendTolliverHandshake(conn, inst.id, inst.subs)
 	if err != nil {
 		return err
 	}
 
-	for _, v := range inst.conns {
-		if slices.Equal(remId[:], v.Id[:]) {
-			return nil
-		}
+	// TODO: What should happen here
+	if inst.conns[remId] != nil {
+		return nil
 	}
 
-	inst.conns = append(inst.conns, &connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
+	// TODO: Insert subs to DB if not exist already (probably need to check about sqlite enforcing uniqueness constraints and maybe use transaction)
+	inst.conns[remId] = conn
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 	return nil
 }
@@ -107,6 +106,13 @@ func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
 	inst.send(mes, channel, key, false)
 }
 
+func (inst *Instance) retry(interval time.Duration) {
+	for {
+		time.Sleep(interval)
+		// Fetch from db then retry
+	}
+}
+
 func (inst *Instance) listenOn(port uint16) error {
 	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, InsecureSkipVerify: true}
 	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(int(port)), opts)
@@ -120,19 +126,18 @@ func (inst *Instance) listenOn(port uint16) error {
 }
 
 func (inst *Instance) awaitHandshake(conn net.Conn) {
-	remId, remSubs, err := handshake.AwaitHandshake(conn, inst.id, inst.subs)
+	remId, _, err := handshake.AwaitHandshake(conn, inst.id, inst.subs)
 	if err != nil {
 		return
 	}
 
-	// TODO: How do we want to handle this. Could overwrite existing conn / have slice of conns and send to all.
-	for _, v := range inst.conns {
-		if slices.Equal(remId[:], v.Id[:]) {
-			return
-		}
+	// TODO: How do we want to handle this. Could overwrite existing conn / have slice of conns and send to all. (Same issue as when creating connection)
+	if inst.conns[remId] != nil {
+		return
 	}
 
-	inst.conns = append(inst.conns, &connections.Wrapper{Subscriptions: remSubs, Id: remId, Conn: conn})
+	// TODO: Commit remote subs to db
+	inst.conns[remId] = conn
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 }
 
@@ -145,7 +150,7 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 
 		switch mesType {
 		case 0:
-			// TODO: Re send handshake
+			// TODO: Re send handshake maybe
 		case 1:
 			// Handshake
 		case 2:
@@ -154,8 +159,8 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 			// Regular message
 			inst.processRegularMessage(r, conn, id)
 		case 4:
+			// Ack
 			inst.proccessAck(r, id)
-			// ack
 		}
 	}
 }
@@ -167,18 +172,6 @@ func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
 	}
 
 	db.Ack(mesId, id, inst.dbPath)
-}
-
-func (inst *Instance) Debug() {
-	fmt.Printf("Tolliver instance with ID % x\n", inst.id[:])
-	fmt.Printf("Connections (%d):\n", len(inst.conns))
-	for i, v := range inst.conns {
-		fmt.Printf("(%d) Remote ID % x, Subs: ", i, v.Id[:])
-		for _, s := range v.Subscriptions {
-			fmt.Printf("(%s, %s), ", s.Channel, s.Key)
-		}
-		fmt.Printf("\n")
-	}
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
@@ -200,7 +193,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		r.FillBuf(body)
 
 		for k, v := range inst.callbacks {
-			if k.Channel == channel && k.Key == key {
+			if (k.Channel == channel || k.Channel == "") && (k.Key == key || k.Key == "") {
 				for _, cb := range v {
 					cb(body)
 				}
@@ -235,28 +228,13 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 		return
 	}
 
-	for _, v := range inst.conns {
-		if slices.Equal(v.Id[:], id[:]) {
-			if code == 0 {
-				v.Subscriptions = append(v.Subscriptions, common.SubcriptionInfo{Channel: channel, Key: key})
-			}
-			if code == 1 {
-				idx := -1
-				for i, s := range v.Subscriptions {
-					if s.Channel == channel && s.Key == key {
-						idx = i
-						break
-					}
-				}
-
-				if idx != -1 {
-					v.Subscriptions[idx] = v.Subscriptions[len(v.Subscriptions)-1]
-					v.Subscriptions = v.Subscriptions[:len(v.Subscriptions)-1]
-				}
-			}
-			return
-		}
+	if code == 0 {
+		// TODO: commit subscription to the DB
 	}
+	if code == 1 {
+		// TODO: remove subscription from the DB
+	}
+	return
 }
 
 func buildSub(channel, key string) []byte {
@@ -281,13 +259,7 @@ func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UU
 	conns := make([]net.Conn, 0, len(inst.conns))
 	ids := make([]uuid.UUID, 0, len(inst.conns))
 
-	for _, v := range inst.conns {
-		if channel == "tolliver" || slices.Contains(v.Subscriptions, common.SubcriptionInfo{Channel: channel, Key: key}) {
-			conns = append(conns, v.Conn)
-			ids = append(ids, v.Id)
-		}
-	}
-
+	// TODO: Fetch uuids that match subs from the db
 	return conns, ids
 }
 

@@ -4,8 +4,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"net"
+	"time"
 
-	"github.com/tug-dev/tolliver/go/internal/connections"
+	"github.com/google/uuid"
 	"github.com/tug-dev/tolliver/go/internal/db"
 )
 
@@ -26,6 +28,9 @@ type InstanceOptions struct {
 
 	// Port to listen on. Defaults to 7011 (T O L L)
 	Port uint16
+
+	// Interval to try resend messages after
+	RetryInterval time.Duration
 }
 
 func NewInstance(opts *InstanceOptions) (*Instance, error) {
@@ -41,8 +46,9 @@ func NewInstance(opts *InstanceOptions) (*Instance, error) {
 	i.id = db.Init(opts.DatabasePath)
 	i.dbPath = opts.DatabasePath
 
-	i.conns = make([]*connections.Wrapper, 0, 10)
+	i.conns = make(map[uuid.UUID]net.Conn)
 	i.listenOn(opts.Port)
+	go i.retry(opts.RetryInterval)
 
 	return &i, nil
 }
@@ -56,6 +62,9 @@ func populateDefaults(options *InstanceOptions) error {
 	}
 	if options.DatabasePath == "" {
 		options.DatabasePath = "./tolliver.sqlite"
+	}
+	if options.RetryInterval == 0 {
+		options.RetryInterval = time.Second
 	}
 
 	return nil

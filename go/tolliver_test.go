@@ -14,6 +14,7 @@ import (
 
 // TODO: Check about mTLS
 // TODO: Switch to buffer pool
+// TODO: Add mutexes because currently not thread safe
 
 func TestHandshake(t *testing.T) {
 	cert1, err := tls.LoadX509KeyPair("./exampleCerts/instance1.crt", "./exampleCerts/instance1.key")
@@ -62,10 +63,6 @@ func TestHandshake(t *testing.T) {
 		fmt.Printf("Received message: %s\n", string(m))
 	})
 	time.Sleep(1 * time.Millisecond)
-
-	inst1.Debug()
-	println("")
-	inst2.Debug()
 
 	inst1.Send("test", "key", []byte("Hello World!"))
 	time.Sleep(50 * time.Millisecond)

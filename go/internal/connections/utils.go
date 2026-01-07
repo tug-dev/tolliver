@@ -3,15 +3,12 @@ package connections
 import (
 	"fmt"
 	"net"
-
-	"github.com/google/uuid"
-	"github.com/tug-dev/tolliver/go/internal/common"
 )
 
 type Wrapper struct {
-	Subscriptions []common.SubcriptionInfo
-	Id            uuid.UUID
-	Conn          net.Conn
+	// Subscriptions []common.SubcriptionInfo
+	// Id            uuid.UUID
+	Conn net.Conn
 }
 
 func SendBytes(mes []byte, conn net.Conn) {

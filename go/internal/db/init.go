@@ -12,6 +12,7 @@ import (
 var schema string
 
 func Init(path string) uuid.UUID {
+	// TODO: don't make multiple connections thats silly change this
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		panic(err)
