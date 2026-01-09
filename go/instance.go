@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ type Instance struct {
 	conns     map[uuid.UUID]net.Conn
 	callbacks map[*common.SubcriptionInfo][]func([]byte)
 	db        *sql.DB
+	l         sync.RWMutex
 }
 
 type TLSError struct {
@@ -112,7 +114,17 @@ func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
 func (inst *Instance) retry(interval time.Duration) {
 	for {
 		time.Sleep(interval)
-		// Fetch from db then retry
+		inst.l.Lock()
+		notAcked := db.GetWork(inst.db)
+		inst.l.Unlock()
+
+		inst.l.RLock()
+		for k, v := range notAcked {
+			if inst.conns[k] != nil {
+				connections.SendBytes(v, inst.conns[k])
+			}
+		}
+		inst.l.RUnlock()
 	}
 }
 
@@ -135,15 +147,19 @@ func (inst *Instance) awaitHandshake(conn net.Conn) {
 	}
 
 	// TODO: How do we want to handle this. Could overwrite existing conn / have slice of conns and send to all. (Same issue as when creating connection)
+	inst.l.RLock()
 	if inst.conns[remId] != nil {
 		return
 	}
+	inst.l.RUnlock()
 
+	inst.l.Lock()
 	for _, s := range remSubs {
 		db.Subscribe(s.Channel, s.Key, remId, inst.db)
 	}
 
 	inst.conns[remId] = conn
+	inst.l.Unlock()
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 }
 
@@ -177,7 +193,9 @@ func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
 		return
 	}
 
+	inst.l.Lock()
 	db.Ack(mesId, id, inst.db)
+	inst.l.Unlock()
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
@@ -198,6 +216,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		body := make([]byte, bodyLen)
 		r.FillBuf(body)
 
+		inst.l.RLock()
 		for k, v := range inst.callbacks {
 			if (k.Channel == channel || k.Channel == "") && (k.Key == key || k.Key == "") {
 				for _, cb := range v {
@@ -205,6 +224,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 				}
 			}
 		}
+		inst.l.RUnlock()
 	}
 
 	if mesId != uint32(4294967295) {
@@ -234,12 +254,14 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 		return
 	}
 
+	inst.l.Lock()
 	if code == 0 {
 		db.Subscribe(channel, key, id, inst.db)
 	}
 	if code == 1 {
 		db.Unsubscribe(channel, key, id, inst.db)
 	}
+	inst.l.Unlock()
 }
 
 func buildSub(channel, key string) []byte {
@@ -262,7 +284,9 @@ func buildMes(body []byte, id uint32, channel, key string) []byte {
 
 func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UUID) {
 	conns := make([]net.Conn, 0, len(inst.conns))
+	inst.l.Lock()
 	ids := db.GetSubscriberUUIDs(channel, key, inst.db)
+	inst.l.Unlock()
 
 	for _, v := range ids {
 		conns = append(conns, inst.conns[v])
@@ -276,7 +300,9 @@ func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 
 	id := uint32(4294967295)
 	if reliable {
+		inst.l.Lock()
 		id = db.SaveMessage(body, recipientIds, channel, key, inst.db)
+		inst.l.Unlock()
 	}
 	mes := buildMes(body, id, channel, key)
 
