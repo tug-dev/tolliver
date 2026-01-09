@@ -5,15 +5,15 @@ pub mod structs;
 
 /// The "version type" is the type of the literal version number. It should
 /// correspond with the number of bytes in the VERSION_LENGTH.
-type VersionType = u16;
+type VersionType = u64;
 /// The "server status code type" is the type of the literal status code. It
 /// should correspond with the number of bytes in SERVER_RESPONSE_CODE_LENGTH.
 pub type HandshakeCodeType = u8;
 
 /// The version of the protocol
-const VERSION: VersionType = 0;
+const VERSION: VersionType = 1;
 /// The number of bytes the version number is encoded in
-const VERSION_LENGTH: usize = 2;
+const VERSION_LENGTH: usize = 8;
 /// The number of bytes the API key is encoded in
 const API_KEY_LENGTH: usize = 32;
 /// The number of bytes the server success/error response is encoded in
@@ -32,10 +32,11 @@ mod tests {
 	use std::thread;
 
 	use server::TolliverServer;
+	use structs::tolliver_connection::ProtoIdType;
 
 	use super::*;
 
-	const EXAMPLE_PROTO_ID: u32 = 0;
+	const EXAMPLE_PROTO_ID: ProtoIdType = 0;
 
 	#[test]
 	fn start_server() {
