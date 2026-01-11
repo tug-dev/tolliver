@@ -30,29 +30,39 @@ type Instance struct {
 	l         sync.RWMutex
 }
 
-type TLSError struct {
-	location string
+type DialError struct {
+	location *net.TCPAddr
 	err      error
 }
 
-func (t *TLSError) Error() string {
-	return t.location + ": " + t.err.Error()
+func (t *DialError) Error() string {
+	return t.location.String() + " >>> " + t.err.Error()
 }
 
-func (t *TLSError) Unwrap() error {
+func (t *DialError) Unwrap() error {
 	return t.err
 }
 
-var ConnectionAlreadyExists = errors.New("This instance already has a connection to the requested remote address")
+const (
+	HandshakeRequestMessageCode byte = iota
+	HandshakeResponseMessageCode
+	HandshakeFinalMessageCode
+	RegularMessageCode
+	AckMessageCode
+)
+
+const ReservedTolliverChannel = "tolliver"
+
+var ErrConnAlreadyExists = errors.New("This instance already has a connection to the requested remote address")
 
 // Attempts to create a tolliver connection to the provided address by opening a TCP socket, performing a TLS handshake
 // and then a tolliver handshake
-func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) error {
+func (inst *Instance) NewConnection(addr *net.TCPAddr, tlsServerName string) error {
 	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName, InsecureSkipVerify: true}
 	conn, err := tls.Dial("tcp", addr.String(), opts)
 	if err != nil {
-		return &TLSError{
-			location: "Creating connection to " + addr.String(),
+		return &DialError{
+			location: addr,
 			err:      err,
 		}
 	}
@@ -62,10 +72,10 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 		return err
 	}
 
-	// TODO: What should happen here
 	inst.l.RLock()
 	if inst.conns[remId] != nil {
-		return nil
+		// INFO: Still doesn't solve receiving an incoming handshake claiming an existing uuid.
+		panic(ErrConnAlreadyExists)
 	}
 	inst.l.RUnlock()
 
@@ -87,12 +97,12 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 // Passing a blank string for either channel or key acts like a * wildcard, i.e this instance will receive messages
 // regardless of the destination channel, key or both
 func (inst *Instance) Subscribe(channel, key string) {
-	if channel == "tolliver" {
-		return
+	if channel == ReservedTolliverChannel {
+		panic("The tolliver channel is reserved for protocol messages")
 	}
 
 	inst.subs = append(inst.subs, common.SubcriptionInfo{Channel: channel, Key: key})
-	inst.send(buildSub(channel, key), "tolliver", "", true)
+	inst.send(buildSub(channel, key), ReservedTolliverChannel, "", true)
 }
 
 // Publishses to all conencted nodes that this node no longer wishes to receive messages on a given key channel pair.
@@ -101,8 +111,8 @@ func (inst *Instance) Subscribe(channel, key string) {
 //
 // TODO: do we want to change the behaviour such that passing blank strings here unsubscribes from all relevant channels.
 func (inst *Instance) Unsubscribe(channel, key string) {
-	if channel == "tolliver" {
-		return
+	if channel == ReservedTolliverChannel {
+		panic("Cannot unsubscribe from the reserved tolliver channel")
 	}
 
 	idx := -1
@@ -118,7 +128,7 @@ func (inst *Instance) Unsubscribe(channel, key string) {
 		inst.subs = inst.subs[:len(inst.subs)-1]
 	}
 
-	inst.send(buildUnSub(channel, key), "tolliver", "", true)
+	inst.send(buildUnSub(channel, key), ReservedTolliverChannel, "", true)
 }
 
 // Registers a callback on the given key channel pair. This function will be called by tolliver any time a message is
@@ -149,17 +159,16 @@ func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
 	inst.send(mes, channel, key, false)
 }
 
+// INFO: Personally I think with a sensible retry interval (10seconds +) we shouldn't need to worry about immediate resends being, and multiple deliveries is assumed by users.
 func (inst *Instance) retry(interval time.Duration) {
 	for {
 		time.Sleep(interval)
-		inst.l.Lock()
 		notAcked := db.GetWork(inst.db)
-		inst.l.Unlock()
 
 		inst.l.RLock()
 		for k, v := range notAcked {
-			if inst.conns[k] != nil {
-				connections.SendBytes(v, inst.conns[k])
+			if c := inst.conns[k]; c != nil {
+				connections.SendBytes(v, c)
 			}
 		}
 		inst.l.RUnlock()
@@ -185,18 +194,16 @@ func (inst *Instance) awaitHandshake(conn net.Conn) {
 	}
 
 	// TODO: How do we want to handle this. Could overwrite existing conn / have slice of conns and send to all. (Same issue as when creating connection)
-	inst.l.RLock()
+	inst.l.Lock()
 	if inst.conns[remId] != nil {
 		return
 	}
-	inst.l.RUnlock()
 
 	for _, s := range remSubs {
 		db.Subscribe(s.Channel, s.Key, remId, inst.db)
 	}
-
-	inst.l.Lock()
 	inst.conns[remId] = conn
+
 	inst.l.Unlock()
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 }
@@ -209,15 +216,16 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 		}
 
 		switch mesType {
-		case 0:
-			// TODO: Re send handshake maybe case 1:
+		case HandshakeRequestMessageCode:
+			// TODO: Re send handshake maybe
+		case HandshakeResponseMessageCode:
 			// Handshake
-		case 2:
+		case HandshakeFinalMessageCode:
 			// Handshake
-		case 3:
+		case RegularMessageCode:
 			// Regular message
 			inst.processRegularMessage(r, conn, id)
-		case 4:
+		case AckMessageCode:
 			// Ack
 			inst.proccessAck(r, id)
 		}
@@ -245,7 +253,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	if err != nil {
 	}
 
-	if channel == "tolliver" {
+	if channel == ReservedTolliverChannel {
 		inst.systemMessage(r, id, bodyLen)
 	} else {
 		body := make([]byte, bodyLen)
