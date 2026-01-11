@@ -60,14 +60,19 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 	}
 
 	// TODO: What should happen here
+	inst.l.RLock()
 	if inst.conns[remId] != nil {
 		return nil
 	}
+	inst.l.RUnlock()
 
 	for _, s := range remSubs {
 		db.Subscribe(s.Channel, s.Key, remId, inst.db)
 	}
+
+	inst.l.Lock()
 	inst.conns[remId] = conn
+	inst.l.Unlock()
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
 	return nil
 }
@@ -152,11 +157,11 @@ func (inst *Instance) awaitHandshake(conn net.Conn) {
 	}
 	inst.l.RUnlock()
 
-	inst.l.Lock()
 	for _, s := range remSubs {
 		db.Subscribe(s.Channel, s.Key, remId, inst.db)
 	}
 
+	inst.l.Lock()
 	inst.conns[remId] = conn
 	inst.l.Unlock()
 	go inst.handleConn(binary.NewReader(conn), conn, remId)
@@ -192,9 +197,7 @@ func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
 		return
 	}
 
-	inst.l.Lock()
 	db.Ack(mesId, id, inst.db)
-	inst.l.Unlock()
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
@@ -253,14 +256,12 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 		return
 	}
 
-	inst.l.Lock()
 	if code == 0 {
 		db.Subscribe(channel, key, id, inst.db)
 	}
 	if code == 1 {
 		db.Unsubscribe(channel, key, id, inst.db)
 	}
-	inst.l.Unlock()
 }
 
 func buildSub(channel, key string) []byte {
@@ -283,9 +284,7 @@ func buildMes(body []byte, id uint32, channel, key string) []byte {
 
 func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UUID) {
 	conns := make([]net.Conn, 0, len(inst.conns))
-	inst.l.Lock()
 	ids := db.GetSubscriberUUIDs(channel, key, inst.db)
-	inst.l.Unlock()
 
 	for _, v := range ids {
 		conns = append(conns, inst.conns[v])
@@ -299,9 +298,7 @@ func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 
 	id := uint32(4294967295)
 	if reliable {
-		inst.l.Lock()
 		id = db.SaveMessage(body, recipientIds, channel, key, inst.db)
-		inst.l.Unlock()
 	}
 	mes := buildMes(body, id, channel, key)
 
