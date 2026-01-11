@@ -44,7 +44,6 @@ func (t *TLSError) Unwrap() error {
 
 var ConnectionAlreadyExists = errors.New("This instance already has a connection to the requested remote address")
 
-// PUBLIC METHODS ------------------------------------------------------------------
 func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) error {
 	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName, InsecureSkipVerify: true}
 	conn, err := tls.Dial("tcp", addr.String(), opts)
