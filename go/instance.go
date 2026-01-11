@@ -45,6 +45,8 @@ func (t *TLSError) Unwrap() error {
 
 var ConnectionAlreadyExists = errors.New("This instance already has a connection to the requested remote address")
 
+// Attempts to create a tolliver connection to the provided address by opening a TCP socket, performing a TLS handshake
+// and then a tolliver handshake
 func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) error {
 	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName, InsecureSkipVerify: true}
 	conn, err := tls.Dial("tcp", addr.String(), opts)
@@ -78,22 +80,50 @@ func (inst *Instance) NewConnection(addr net.TCPAddr, tlsServerName string) erro
 	return nil
 }
 
+// Notifies all instances this instance is currently conencted to that this instance wants to receive messages
+// on the provided channel and key. This is stored in memory so it can be sent during handshakes, however it is
+// not persisted to the database.
+//
+// Passing a blank string for either channel or key acts like a * wildcard, i.e this instance will receive messages
+// regardless of the destination channel, key or both
 func (inst *Instance) Subscribe(channel, key string) {
 	if channel == "tolliver" {
 		return
 	}
 
+	inst.subs = append(inst.subs, common.SubcriptionInfo{Channel: channel, Key: key})
 	inst.send(buildSub(channel, key), "tolliver", "", true)
 }
 
+// Publishses to all conencted nodes that this node no longer wishes to receive messages on a given key channel pair.
+// If the provided key channel pair was in the nodes subscriptions list locally it will be removed and no longer sent to
+// new connections during the handshake.
+//
+// TODO: do we want to change the behaviour such that passing blank strings here unsubscribes from all relevant channels.
 func (inst *Instance) Unsubscribe(channel, key string) {
 	if channel == "tolliver" {
 		return
 	}
 
+	idx := -1
+	for i, v := range inst.subs {
+		if v.Channel == channel && v.Key == key {
+			idx = i
+			break
+		}
+	}
+
+	if idx != -1 {
+		inst.subs[idx] = inst.subs[len(inst.subs)-1]
+		inst.subs = inst.subs[:len(inst.subs)-1]
+	}
+
 	inst.send(buildUnSub(channel, key), "tolliver", "", true)
 }
 
+// Registers a callback on the given key channel pair. This function will be called by tolliver any time a message is
+// received on that pair. As is the case with the Subscribe method, passing blank strings for key or channel to this
+// behaves like a wildcard.
 func (inst *Instance) Register(channel, key string, cb func([]byte)) {
 	if inst.callbacks == nil {
 		inst.callbacks = make(map[*common.SubcriptionInfo][]func([]byte))
@@ -108,10 +138,13 @@ func (inst *Instance) Register(channel, key string, cb func([]byte)) {
 	inst.callbacks[w] = append(inst.callbacks[w], cb)
 }
 
+// Sends a message to all instances which are currently connected and subscribed on the channel key pair. Saves the message and
+// required metadata to ensure eventual delivery.
 func (inst *Instance) Send(channel, key string, mes []byte) {
 	inst.send(mes, channel, key, true)
 }
 
+// Attempts once to send a message to all connected instances subscribed to the key channel pair.
 func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
 	inst.send(mes, channel, key, false)
 }
@@ -177,8 +210,7 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 
 		switch mesType {
 		case 0:
-			// TODO: Re send handshake maybe
-		case 1:
+			// TODO: Re send handshake maybe case 1:
 			// Handshake
 		case 2:
 			// Handshake
