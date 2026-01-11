@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"math"
 	"net"
 	"strconv"
 	"sync"
@@ -229,7 +230,8 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		inst.l.RUnlock()
 	}
 
-	if mesId != uint32(4294967295) {
+	// MaxUint32 is the message ID for unreliable messages
+	if mesId != uint32(math.MaxUint32) {
 		// Send ack
 		ack := buildAck(mesId)
 		connections.SendBytes(ack, conn)
@@ -282,6 +284,7 @@ func buildMes(body []byte, id uint32, channel, key string) []byte {
 	return w.Join()
 }
 
+// TODO: Not exactly sure how an iterator would fit in here
 func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UUID) {
 	conns := make([]net.Conn, 0, len(inst.conns))
 	ids := db.GetSubscriberUUIDs(channel, key, inst.db)
@@ -296,7 +299,8 @@ func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UU
 func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 	recipientConns, recipientIds := inst.findRecipients(channel, key)
 
-	id := uint32(4294967295)
+	// This represents an unreliable message
+	id := uint32(math.MaxUint32)
 	if reliable {
 		id = db.SaveMessage(body, recipientIds, channel, key, inst.db)
 	}
