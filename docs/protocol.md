@@ -22,7 +22,7 @@ The client sends a message in the following format:
 1 byte - message type, for initial handshake this is 0
 8 bytes - big endian u64 of client version (max version is therefore 2^64)
 16 bytes - client UUID v7
-Rest of the message - In the format of a subscribtion message
+Rest of the message - In the format of a subscription message
 ```
 
 #### Handshake response
@@ -34,6 +34,7 @@ Then the server replies in the following format:
 8 bytes - big endian u64 of server version
 16 bytes - server UUID v7
 1 byte - handshake response code
+Rest of the message - In the format of a subscription message
 ```
 
 #### Handshake final
