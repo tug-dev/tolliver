@@ -22,10 +22,7 @@ The client sends a message in the following format:
 1 byte - message type, for initial handshake this is 0
 8 bytes - big endian u64 of client version (max version is therefore 2^64)
 16 bytes - client UUID v7
-8 bytes - number of channels to subscribe to
-Repeated for each channel that needs to be subscribed to:
-  8 bytes - big endian u64 of the number of bytes the channel string is (max length is therefore 2^64)
-  Number of bytes specified - UTF-8 encoded string of the channel name
+Rest of the message - In the format of a subscribtion message
 ```
 
 #### Handshake response
@@ -37,11 +34,6 @@ Then the server replies in the following format:
 8 bytes - big endian u64 of server version
 16 bytes - server UUID v7
 1 byte - handshake response code
-8 bytes - number of responses to channel subscription requests
-Repeated for each channel that needs a response:
-  1 bytes - the channel subscription status code
-  8 bytes - big endian u64 of the number of bytes the channel string is
-  Number of bytes specified - UTF-8 encoded string of the channel name
 ```
 
 #### Handshake final
