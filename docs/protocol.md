@@ -2,9 +2,6 @@
 
 ## Overview
 
-Can we for simplicity have every single message start with a 1 byte message type including handshake. I see no reason not to and it will make implementation a little cleaner.
-
-
 Tolliver provides two key features:
 - Messages which are guaranteed to deliver eventually
 - Organising the sending and receiving of messages by channels (a broad type of message e.g. vm-shutdown) and keys (specific identifiers - a sparkler node id). Messages are published to a channel or key or both and similarly handlers on incoming messages are registered by these categories.
@@ -15,81 +12,86 @@ It is likely that each message channel will only contain data which is of a spec
 
 ### Initial handshake
 
-The server and the client first establish a TCP socket between them, after which the client sends a hello message that authenticates it and has information about it's version. For this to be sent in a single TCP segment it should be below 536 bytes (or 1448 bytes, haven't figured out which yet). The client sends a message in the following format:
+The server and the client first establish a TCP socket with TLS between them, after which the client sends a hello message that has information about it's version and what channels it would like to subscribe to from the start.
 
-<!-- Is there any problem with the handshake being over multiple TCP/TLS segments? -->
-<!---->
-<!-- Given we are using TLS forgo API key and send the client UUID in the handshake? -->
-<!-- Also add the subscriptions that are wanted -->
+#### Handshake request
 
+The client sends a message in the following format:
 
 ```
+1 byte - message type, for initial handshake this is 0
 8 bytes - big endian u64 of client version (max version is therefore 2^64)
-32 bytes - 256-bit api key
+16 bytes - client UUID v7
+8 bytes - number of channels to subscribe to
+Repeated for each channel that needs to be subscribed to:
+  8 bytes - big endian u64 of the number of bytes the channel string is (max length is therefore 2^64)
+  Number of bytes specified - UTF-8 encoded string of the channel name
 ```
+
+#### Handshake response
 
 Then the server replies in the following format:
 
-<!-- Again include server UUID -->
-
 ```
-1 byte - handshake status code, with a 0 corresponding with success while 1-255 being an error.
+1 byte - message type, for handshake response this is 1
 8 bytes - big endian u64 of server version
+16 bytes - server UUID v7
+1 byte - handshake response code
+8 bytes - number of responses to channel subscription requests
+Repeated for each channel that needs a response:
+  1 bytes - the channel subscription status code
+  8 bytes - big endian u64 of the number of bytes the channel string is
+  Number of bytes specified - UTF-8 encoded string of the channel name
 ```
 
-### Channel subscription message
+#### Handshake final
+
+And then the client replies with:
 
 ```
-1 byte - message type, for subscription this is 1
-4 bytes - big endian u32 of the number of bytes the channel string is
-Rest of message - UTF-8 encoded string of the channel name
+1 byte - message type, for handshake final this is 2
+1 byte - handshake final code
 ```
 
-<!-- Potentially include the channel name in the acknowledgement in the case that a client tried to subscribe to multiple channels. -->
-### Subscription response
+On a failure, the party which found the failure sends the message with the error code and closes the connection. Once the handshake is a success both parties begin waiting for other messages. The server must process the subscriptions of the incoming connection synchronously before responding, and naturally no messages should be sent on a connection until the handshake is complete, and new message sending should be blocked while a new connection is being established such that all new messages are sent to even recent remotes.
+
+Although there is no reason for the handshake to be sent again on an existing connection, if a handshake req message is received on an existing connection responses should be sent as normal. If unexpected handshake response or final messages are received they should simply be ignored by the receiving party.
+
+### Regular message
 
 ```
-1 byte - message type, for subscription response this is 2
-1 bytes - the channel subscription status code
+1 byte - message type, for a regular message this is 3
+8 bytes - big endian u64 of local message id (taken from the database, should be set as 0 for an unreliable message)
+8 bytes - big endian u64 of the number of bytes the channel string is
+Number of bytes specified - UTF-8 encoded channel name
+8 bytes - big endian u64 of the number of bytes the key string is
+Number of bytes specified - UTF-8 encoded key name
+8 bytes - big endian u64 of the number of bytes the body is
+Number of bytes specified - Message body
 ```
 
-### Channel unsubscription message
+### Regular message acknowledgment
 
 ```
-1 byte - message type, for unsubscription this is 3
-4 bytes - big endian u32 of the number of bytes the channel string is
-Rest of message - UTF-8 encoded string of the channel name
+1 byte - message type, for a regular message acknowledgment this is 4
+1 byte - regular message acknowledgment status code
+8 bytes - big endian u64 of the local message id
 ```
 
-### Unsubscription response
+The receiver sends an ack once per received message and pass the message to the application level code each time. The sender will resend their message at any interval they see fit until they have received the ack.
+
+### Subscription message
+
+Subscription and unsubscription messages are to be sent as regular messages with no key on the reserved "tolliver" channel (as such the API for tolliver should forbid this channel from being used by application level messages). The body of the message will have the format of:
 
 ```
-1 byte - message type, for unsubscription response this is 4
-1 bytes - the channel subscription status code
-```
-
-<!-- Add in messages for subscription to all messages with a given key and a message and key packet. -->
-
-### Information message
-
-<!-- Remove the proto format id and add a message identifier? -->
-
-```
-1 byte - message type, for info message this is 3
-8 bytes - big endian u64 of the id of the proto format of the message (therefore max of ~1.8 x 10^19 unique proto formats can be used)
-2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
-Rest of message - body encoded with protocol buffers
-```
-
-### Information message response
-
-```
-1 byte - message type, for info message response this is 4
-1 byte - information message response status code
----Everything beyond this is only included if the status code is 1---
-8 bytes - big endian u64 of the id of the proto format of the message (therefore max of ~1.8 x 10^19 unique proto formats can be used)
-2 bytes - big endian u16 of the number of bytes in the body (max body size is therefore ~4.254 x 10^22 petabytes)
-Rest of message - body encoded with protocol buffers
+1 byte - 0 for subscription 1 for unsubscription
+8 bytes - number of channels to (un)subscribe to
+Repeated for each channel that needs to be (un)subscribed to:
+  8 bytes - big endian u64 of the number of bytes the channel string is
+  Number of bytes specified - UTF-8 encoded channel name
+  8 bytes - big endian u64 of the number of bytes the key string is
+  Number of bytes specified - UTF-8 encoded key name
 ```
 
 ## Status codes
@@ -99,23 +101,34 @@ Rest of message - body encoded with protocol buffers
 ```
 0 - Success
 1 - General error
-2 - Incompatible version
-3 - Unauthorized
+2 - Newer protocol version but support backwards compatibility so success.
+3 - Newer protocol version no backwards compatibility so failure.
+4 - older protocol version so await final message as to whether the sender supports backwards compatibility. This is the only case where a handshake final message will occur.
 ```
 
-### Channel subscription status codes
+### Handshake response status codes
 
 ```
 0 - Success
 1 - General error
-2 - Unauthorized
+2 - Newer protocol version but support backwards compatibility so success.
+3 - Newer protocol version no backwards compatibility so failure.
+4 - Older protocol version so await final message as to whether the sender supports backwards compatibility. This is the only case where a handshake final message will occur.
 ```
 
-### Information message status codes
+### Handshake final status codes
+
 ```
 0 - Success
-1 - Success with aditional information
-2 - General error
+1 - General error
+2 - Incompatible version
+```
+
+### Regular message acknowledgment code
+
+```
+0 - Success
+1 - General error
 ```
 
 ## Versioning
