@@ -18,7 +18,14 @@ const (
 	HandshakeRequestCompatible
 )
 
+const (
+	HandshakeFinalSuccess byte = iota
+	HandshakeFinalGeneralError
+	HandshakeFinalIncompatible
+)
+
 var (
 	UnexpectedMessageCode = errors.New("Unexpected message code")
 	IncompatibleVersions  = errors.New("Incompatible tolliver version")
+	HandshakeFailed       = errors.New("Handshake failed")
 )

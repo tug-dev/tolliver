@@ -22,7 +22,7 @@ The client sends a message in the following format:
 1 byte - message type, for initial handshake this is 0
 8 bytes - big endian u64 of client version (max version is therefore 2^64)
 16 bytes - client UUID v7
-The clients subscriptions using the same format as subscription messages
+The clients subscriptions using the same format as subscription messages (naturally excluding the byte denoting subscription vs unsubscription as in the hanshake we present the current list of subscriptions)
 ```
 
 #### Handshake response
@@ -88,16 +88,6 @@ Repeated for each channel that needs to be (un)subscribed to:
 ```
 
 ## Status codes
-
-### Handshake status codes
-
-```
-0 - Success
-1 - General error
-2 - Newer protocol version but support backwards compatibility so success.
-3 - Newer protocol version no backwards compatibility so failure.
-4 - older protocol version so await final message as to whether the sender supports backwards compatibility. This is the only case where a handshake final message will occur.
-```
 
 ### Handshake response status codes
 

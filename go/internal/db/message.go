@@ -7,7 +7,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func SaveMessage(mes []byte, recipients []uuid.UUID, channel, key string, db *sql.DB) uint32 {
+func SaveMessage(mes []byte, recipients []uuid.UUID, channel, key string, db *sql.DB) uint64 {
 	res, err := db.Exec("INSERT INTO message (channel, key, data) VALUES ($1, $2, $3)", channel, key, mes)
 	if err != nil {
 		panic(err)
@@ -25,5 +25,5 @@ func SaveMessage(mes []byte, recipients []uuid.UUID, channel, key string, db *sq
 		}
 	}
 
-	return uint32(id)
+	return uint64(id)
 }
