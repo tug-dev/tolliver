@@ -3,6 +3,7 @@ package binary
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 
@@ -64,7 +65,7 @@ func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
 
 			*v = res
 
-		case []common.SubcriptionInfo:
+		case *[]common.SubcriptionInfo:
 			err := r.ReadSubs(v)
 			if err != nil {
 				return err
@@ -117,13 +118,16 @@ func (r *Reader) ReadUUID() (uuid.UUID, error) {
 	return id, nil
 }
 
-func (r *Reader) ReadSubs(dest []common.SubcriptionInfo) error {
+func (r *Reader) ReadSubs(dest *[]common.SubcriptionInfo) error {
 	num, err := r.ReadUint32()
 	if err != nil {
 		return err
 	}
 
-	dest = make([]common.SubcriptionInfo, num)
+	if &dest == nil {
+		*dest = make([]common.SubcriptionInfo, num)
+	}
+
 	for i := range num {
 		chanLen, err := r.ReadUint32()
 		if err != nil {
@@ -143,7 +147,7 @@ func (r *Reader) ReadSubs(dest []common.SubcriptionInfo) error {
 			return err
 		}
 
-		dest[i] = common.SubcriptionInfo{Channel: channel, Key: key}
+		(*dest)[i] = common.SubcriptionInfo{Channel: channel, Key: key}
 	}
 
 	return nil
