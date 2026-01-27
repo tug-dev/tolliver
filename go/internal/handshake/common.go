@@ -12,6 +12,7 @@ const (
 
 const (
 	HandshakeSuccess byte = iota
+	GeneralError
 	HandshakeBackwardsCompatible
 	HandshakeIncompatible
 	HandshakeRequestCompatible
