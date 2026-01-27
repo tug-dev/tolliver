@@ -9,7 +9,7 @@ import (
 // TODO: check about sqlite enforcing uniqueness constraints and maybe use transaction
 
 func GetSubscriberUUIDs(channel, key string, db *sql.DB) []uuid.UUID {
-	res, err := db.Query("SELECT DISTINCT id FROM subscription WHERE (channel = $1 OR channel = \"\") AND (key = $2 OR key = \"\")")
+	res, err := db.Query("SELECT DISTINCT id FROM subscription WHERE (channel = $1 OR channel = \"\") AND (key = $2 OR key = \"\")", channel, key)
 	if err != nil {
 		panic(err)
 	}

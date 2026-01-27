@@ -17,15 +17,15 @@ import (
 // TODO: Add mutexes because currently not thread safe
 
 func TestHandshake(t *testing.T) {
-	cert1, err := tls.LoadX509KeyPair("./exampleCerts/instance1.crt", "./exampleCerts/instance1.key")
+	cert1, err := tls.LoadX509KeyPair("./testData/instance1.crt", "./testData/instance1.key")
 	if err != nil {
 		t.Error(err)
 	}
-	cert2, err := tls.LoadX509KeyPair("./exampleCerts/instance2.crt", "./exampleCerts/instance2.key")
+	cert2, err := tls.LoadX509KeyPair("./testData/instance2.crt", "./testData/instance2.key")
 	if err != nil {
 		t.Error(err)
 	}
-	caPEM, err := os.ReadFile("./exampleCerts/root.crt")
+	caPEM, err := os.ReadFile("./testData/root.crt")
 	if err != nil {
 		t.Error(err)
 	}
@@ -33,6 +33,8 @@ func TestHandshake(t *testing.T) {
 	if ok := caPool.AppendCertsFromPEM(caPEM); !ok {
 		t.Error("Could not parse root cert")
 	}
+
+	println("Loaded certs")
 
 	inst1, err := tolliver.NewInstance(&tolliver.InstanceOptions{
 		Port:         8000,
@@ -54,16 +56,26 @@ func TestHandshake(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = inst1.NewConnection(net.TCPAddr{IP: []byte{127, 0, 0, 1}, Port: 9000}, "")
+	println("Created instances")
+
+	err = inst1.NewConnection(&net.TCPAddr{IP: []byte{127, 0, 0, 1}, Port: 9000}, "")
 	if err != nil {
 		t.Error(err)
 	}
+
+	println("Connected instances")
+
 	inst2.Subscribe("test", "key")
+
+	println("Sent subscription")
+
 	inst2.Register("test", "key", func(m []byte) {
 		fmt.Printf("Received message: %s\n", string(m))
 	})
 	time.Sleep(1 * time.Millisecond)
 
 	inst1.Send("test", "key", []byte("Hello World!"))
+
+	println("Sent message")
 	time.Sleep(50 * time.Millisecond)
 }
