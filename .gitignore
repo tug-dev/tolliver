@@ -1,4 +1,7 @@
 /rust/target
-tolliver.db
-tolliver.db-shm
-tolliver.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
