@@ -7,7 +7,6 @@ import (
 	"errors"
 	"math"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -31,12 +30,12 @@ type Instance struct {
 }
 
 type DialError struct {
-	location *net.TCPAddr
-	err      error
+	addr RemoteAddr
+	err  error
 }
 
 func (t *DialError) Error() string {
-	return t.location.String() + " >>> " + t.err.Error()
+	return t.addr.String() + " >>> " + t.err.Error()
 }
 
 func (t *DialError) Unwrap() error {
@@ -57,13 +56,13 @@ var ErrConnAlreadyExists = errors.New("This instance already has a connection to
 
 // Attempts to create a tolliver connection to the provided address by opening a TCP socket, performing a TLS handshake
 // and then a tolliver handshake
-func (inst *Instance) NewConnection(addr *net.TCPAddr, tlsServerName string) error {
-	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName, InsecureSkipVerify: true}
+func (inst *Instance) NewConnection(addr RemoteAddr) error {
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: addr.ServerName, InsecureSkipVerify: true}
 	conn, err := tls.Dial("tcp", addr.String(), opts)
 	if err != nil {
 		return &DialError{
-			location: addr,
-			err:      err,
+			addr: addr,
+			err:  err,
 		}
 	}
 
@@ -175,9 +174,9 @@ func (inst *Instance) retry(interval time.Duration) {
 	}
 }
 
-func (inst *Instance) listenOn(port uint16) error {
+func (inst *Instance) listenOn(laddr string) error {
 	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, InsecureSkipVerify: true}
-	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(int(port)), opts)
+	lst, err := tls.Listen("tcp", laddr, opts)
 	if err != nil {
 		return err
 	}
