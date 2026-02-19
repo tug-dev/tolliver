@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -24,18 +23,18 @@ type Instance struct {
 	subs      []common.SubcriptionInfo
 	id        uuid.UUID
 	conns     map[uuid.UUID]net.Conn
-	callbacks map[*common.SubcriptionInfo][]func([]byte)
+	callbacks map[*common.SubcriptionInfo][]func([]byte) bool
 	db        *sql.DB
 	l         sync.RWMutex
 }
 
 type DialError struct {
-	location *net.TCPAddr
-	err      error
+	addr RemoteAddr
+	err  error
 }
 
 func (t *DialError) Error() string {
-	return t.location.String() + " >>> " + t.err.Error()
+	return t.addr.String() + " >>> " + t.err.Error()
 }
 
 func (t *DialError) Unwrap() error {
@@ -61,13 +60,13 @@ var ErrConnAlreadyExists = errors.New("This instance already has a connection to
 
 // Attempts to create a tolliver connection to the provided address by opening a TCP socket, performing a TLS handshake
 // and then a tolliver handshake
-func (inst *Instance) NewConnection(addr *net.TCPAddr, tlsServerName string) error {
-	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: tlsServerName, InsecureSkipVerify: true}
+func (inst *Instance) NewConnection(addr RemoteAddr) error {
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: addr.ServerName, InsecureSkipVerify: true}
 	conn, err := tls.Dial("tcp", addr.String(), opts)
 	if err != nil {
 		return &DialError{
-			location: addr,
-			err:      err,
+			addr: addr,
+			err:  err,
 		}
 	}
 
@@ -137,16 +136,17 @@ func (inst *Instance) Unsubscribe(channel, key string) {
 
 // Registers a callback on the given key channel pair. This function will be called by tolliver any time a message is
 // received on that pair. As is the case with the Subscribe method, passing blank strings for key or channel to this
-// behaves like a wildcard.
-func (inst *Instance) Register(channel, key string, cb func([]byte)) {
+// behaves like a wildcard. The callback should return a boolean value which indicates whether the message has been
+// processed correctly and should be acked
+func (inst *Instance) Register(channel, key string, cb func([]byte) bool) {
 	if inst.callbacks == nil {
-		inst.callbacks = make(map[*common.SubcriptionInfo][]func([]byte))
+		inst.callbacks = make(map[*common.SubcriptionInfo][]func([]byte) bool)
 	}
 
 	w := &common.SubcriptionInfo{Channel: channel, Key: key}
 
 	if inst.callbacks[w] == nil {
-		inst.callbacks[w] = make([]func([]byte), 0, 5)
+		inst.callbacks[w] = make([]func([]byte) bool, 0, 5)
 	}
 
 	inst.callbacks[w] = append(inst.callbacks[w], cb)
@@ -179,9 +179,9 @@ func (inst *Instance) retry(interval time.Duration) {
 	}
 }
 
-func (inst *Instance) listenOn(port uint16) error {
+func (inst *Instance) listenOn(laddr string) error {
 	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, InsecureSkipVerify: true}
-	lst, err := tls.Listen("tcp", "127.0.0.1:"+strconv.Itoa(int(port)), opts)
+	lst, err := tls.Listen("tcp", laddr, opts)
 	if err != nil {
 		return err
 	}
@@ -277,6 +277,8 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		return
 	}
 
+	var shouldAck = true
+
 	if channel == ReservedTolliverChannel {
 		inst.systemMessage(r, id, bodyLen)
 	} else {
@@ -287,7 +289,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		for k, v := range inst.callbacks {
 			if (k.Channel == channel || k.Channel == "") && (k.Key == key || k.Key == "") {
 				for _, cb := range v {
-					cb(body)
+					shouldAck = shouldAck && cb(body)
 				}
 			}
 		}

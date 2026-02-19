@@ -37,6 +37,7 @@ func TestHandshake(t *testing.T) {
 	println("Loaded certs")
 
 	inst1, err := tolliver.NewInstance(&tolliver.InstanceOptions{
+		Interface:    "127.0.0.1",
 		Port:         8000,
 		CA:           caPool,
 		InstanceCert: &cert1,
@@ -47,6 +48,7 @@ func TestHandshake(t *testing.T) {
 	}
 
 	inst2, err := tolliver.NewInstance(&tolliver.InstanceOptions{
+		Interface:    "127.0.0.1",
 		Port:         9000,
 		CA:           caPool,
 		InstanceCert: &cert2,
@@ -58,7 +60,7 @@ func TestHandshake(t *testing.T) {
 
 	println("Created instances")
 
-	err = inst1.NewConnection(&net.TCPAddr{IP: []byte{127, 0, 0, 1}, Port: 9000}, "")
+	err = inst1.NewConnection(tolliver.RemoteAddr{&net.TCPAddr{IP: []byte{127, 0, 0, 1}, Port: 9000}, ""})
 	if err != nil {
 		t.Error(err)
 	}
@@ -69,8 +71,9 @@ func TestHandshake(t *testing.T) {
 
 	println("Sent subscription")
 
-	inst2.Register("test", "key", func(m []byte) {
+	inst2.Register("test", "key", func(m []byte) bool {
 		fmt.Printf("Received message: %s\n", string(m))
+		return true
 	})
 	time.Sleep(1 * time.Millisecond)
 
