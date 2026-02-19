@@ -71,8 +71,9 @@ func TestHandshake(t *testing.T) {
 
 	println("Sent subscription")
 
-	inst2.Register("test", "key", func(m []byte) {
+	inst2.Register("test", "key", func(m []byte) bool {
 		fmt.Printf("Received message: %s\n", string(m))
+		return true
 	})
 	time.Sleep(1 * time.Millisecond)
 

@@ -24,7 +24,7 @@ type Instance struct {
 	subs      []common.SubcriptionInfo
 	id        uuid.UUID
 	conns     map[uuid.UUID]net.Conn
-	callbacks map[*common.SubcriptionInfo][]func([]byte)
+	callbacks map[*common.SubcriptionInfo][]func([]byte) bool
 	db        *sql.DB
 	l         sync.RWMutex
 }
@@ -132,16 +132,17 @@ func (inst *Instance) Unsubscribe(channel, key string) {
 
 // Registers a callback on the given key channel pair. This function will be called by tolliver any time a message is
 // received on that pair. As is the case with the Subscribe method, passing blank strings for key or channel to this
-// behaves like a wildcard.
-func (inst *Instance) Register(channel, key string, cb func([]byte)) {
+// behaves like a wildcard. The callback should return a boolean value which indicates whether the message has been
+// processed correctly and should be acked
+func (inst *Instance) Register(channel, key string, cb func([]byte) bool) {
 	if inst.callbacks == nil {
-		inst.callbacks = make(map[*common.SubcriptionInfo][]func([]byte))
+		inst.callbacks = make(map[*common.SubcriptionInfo][]func([]byte) bool)
 	}
 
 	w := &common.SubcriptionInfo{Channel: channel, Key: key}
 
 	if inst.callbacks[w] == nil {
-		inst.callbacks[w] = make([]func([]byte), 0, 5)
+		inst.callbacks[w] = make([]func([]byte) bool, 0, 5)
 	}
 
 	inst.callbacks[w] = append(inst.callbacks[w], cb)
@@ -252,6 +253,8 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	if err != nil {
 	}
 
+	var shouldAck = true
+
 	if channel == ReservedTolliverChannel {
 		inst.systemMessage(r, id, bodyLen)
 	} else {
@@ -262,7 +265,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		for k, v := range inst.callbacks {
 			if (k.Channel == channel || k.Channel == "") && (k.Key == key || k.Key == "") {
 				for _, cb := range v {
-					cb(body)
+					shouldAck = shouldAck && cb(body)
 				}
 			}
 		}
@@ -270,7 +273,7 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	}
 
 	// MaxUint32 is the message ID for unreliable messages
-	if mesId != uint32(math.MaxUint32) {
+	if mesId != uint32(math.MaxUint32) && shouldAck {
 		// Send ack
 		ack := buildAck(mesId)
 		connections.SendBytes(ack, conn)
