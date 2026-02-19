@@ -3,6 +3,7 @@ package binary
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 
@@ -18,7 +19,7 @@ func NewReader(conn net.Conn) *Reader {
 	return &Reader{bufio.NewReader(conn)}
 }
 
-func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
+func (r *Reader) ReadAll(lens []uint64, destinations ...any) error {
 	var p = 0
 
 	for _, val := range destinations {
@@ -64,7 +65,7 @@ func (r *Reader) ReadAll(lens []uint32, destinations ...any) error {
 
 			*v = res
 
-		case []common.SubcriptionInfo:
+		case *[]common.SubcriptionInfo:
 			err := r.ReadSubs(v)
 			if err != nil {
 				return err
@@ -92,8 +93,13 @@ func (r *Reader) ReadUint32() (uint32, error) {
 	return binary.BigEndian.Uint32(b), err
 }
 
-func (r *Reader) ReadString(length uint32) (string, error) {
-	b := make([]byte, length)
+func (r *Reader) ReadString(length uint64) (string, error) {
+	maxInt := uint64(int(^uint(0) >> 1))
+	if length > maxInt {
+		return "", errors.New("string length exceeds max int")
+	}
+
+	b := make([]byte, int(length))
 	_, err := io.ReadFull(r, b)
 
 	return string(b), err
@@ -117,24 +123,28 @@ func (r *Reader) ReadUUID() (uuid.UUID, error) {
 	return id, nil
 }
 
-func (r *Reader) ReadSubs(dest []common.SubcriptionInfo) error {
-	num, err := r.ReadUint32()
+func (r *Reader) ReadSubs(dest *[]common.SubcriptionInfo) error {
+	num, err := r.ReadUint64()
 	if err != nil {
 		return err
 	}
+	maxInt := uint64(int(^uint(0) >> 1))
+	if num > maxInt {
+		return errors.New("subscription count exceeds max int")
+	}
 
-	dest = make([]common.SubcriptionInfo, num)
-	for i := range num {
-		chanLen, err := r.ReadUint32()
+	*dest = make([]common.SubcriptionInfo, int(num))
+
+	for i := uint64(0); i < num; i++ {
+		chanLen, err := r.ReadUint64()
 		if err != nil {
 			return err
 		}
-		keyLen, err := r.ReadUint32()
-		if err != nil {
-			return err
-		}
-
 		channel, err := r.ReadString(chanLen)
+		if err != nil {
+			return err
+		}
+		keyLen, err := r.ReadUint64()
 		if err != nil {
 			return err
 		}
@@ -143,7 +153,7 @@ func (r *Reader) ReadSubs(dest []common.SubcriptionInfo) error {
 			return err
 		}
 
-		dest[i] = common.SubcriptionInfo{Channel: channel, Key: key}
+		(*dest)[int(i)] = common.SubcriptionInfo{Channel: channel, Key: key}
 	}
 
 	return nil

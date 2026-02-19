@@ -71,10 +71,11 @@ func (w *Writer) WriteUUID(id uuid.UUID) {
 }
 
 func (w *Writer) WriteSubscriptions(subs []common.SubcriptionInfo) {
+	w.WriteUint64(uint64(len(subs)))
 	for _, v := range subs {
-		w.WriteUint32(uint32(len([]byte(v.Channel))))
-		w.WriteUint32(uint32(len([]byte(v.Key))))
+		w.WriteUint64(uint64(len([]byte(v.Channel))))
 		w.data = append(w.data, []byte(v.Channel)...)
+		w.WriteUint64(uint64(len([]byte(v.Key))))
 		w.data = append(w.data, []byte(v.Key)...)
 	}
 }
