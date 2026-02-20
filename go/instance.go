@@ -170,9 +170,9 @@ func (inst *Instance) retry(interval time.Duration) {
 		notAcked := db.GetWork(inst.db)
 
 		inst.l.RLock()
-		for k, v := range notAcked {
-			if c := inst.conns[k]; c != nil {
-				connections.SendBytes(v, c)
+		for _, v := range notAcked {
+			if c := inst.conns[v.Receiver]; c != nil {
+				connections.SendBytes(buildMes(v.Payload, v.MesId, v.Channel, v.Key), c)
 			}
 		}
 		inst.l.RUnlock()
