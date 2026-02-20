@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"math"
 	"net"
 	"sync"
@@ -27,6 +28,7 @@ type Instance struct {
 	callbacks map[*common.SubcriptionInfo][]func([]byte) bool
 	db        *sql.DB
 	l         sync.RWMutex
+	logger    slog.Logger
 }
 
 type DialError struct {
@@ -56,37 +58,41 @@ var ErrConnAlreadyExists = errors.New("This instance already has a connection to
 
 // Attempts to create a tolliver connection to the provided address by opening a TCP socket, performing a TLS handshake
 // and then a tolliver handshake
-func (inst *Instance) NewConnection(addr RemoteAddr) error {
-	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: addr.ServerName, InsecureSkipVerify: true}
-	conn, err := tls.Dial("tcp", addr.String(), opts)
-	if err != nil {
-		return &DialError{
-			addr: addr,
-			err:  err,
+func (inst *Instance) NewConnection(addr RemoteAddr) {
+	go inst.newConnection(addr)
+}
+
+func (inst *Instance) newConnection(addr RemoteAddr) {
+	for {
+		opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: addr.ServerName, InsecureSkipVerify: true}
+		conn, err := tls.Dial("tcp", addr.String(), opts)
+		if err != nil {
+			inst.logger.Error("Failed to connect to " + addr.Addr.String())
+			continue
 		}
-	}
 
-	remId, remSubs, err := handshake.SendTolliverHandshake(conn, inst.id, inst.subs)
-	if err != nil {
-		return err
-	}
+		remId, remSubs, err := handshake.SendTolliverHandshake(conn, inst.id, inst.subs)
+		if err != nil {
+			inst.logger.Error("Tolliver handshake with " + addr.Addr.String() + " failed - " + err.Error())
+			continue
+		}
 
-	inst.l.RLock()
-	if inst.conns[remId] != nil {
-		// INFO: Still doesn't solve receiving an incoming handshake claiming an existing uuid.
-		panic(ErrConnAlreadyExists)
-	}
-	inst.l.RUnlock()
+		inst.l.RLock()
+		if inst.conns[remId] != nil {
+			return
+		}
+		inst.l.RUnlock()
 
-	for _, s := range remSubs {
-		db.Subscribe(s.Channel, s.Key, remId, inst.db)
-	}
+		for _, s := range remSubs {
+			db.Subscribe(s.Channel, s.Key, remId, inst.db)
+		}
 
-	inst.l.Lock()
-	inst.conns[remId] = conn
-	inst.l.Unlock()
-	go inst.handleConn(binary.NewReader(conn), conn, remId)
-	return nil
+		inst.l.Lock()
+		inst.conns[remId] = conn
+		inst.l.Unlock()
+		go inst.handleConn(binary.NewReader(conn), conn, remId)
+		return
+	}
 }
 
 // Notifies all instances this instance is currently conencted to that this instance wants to receive messages

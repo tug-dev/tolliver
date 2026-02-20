@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net"
 	"strconv"
 	"time"
@@ -37,6 +38,8 @@ type InstanceOptions struct {
 
 	// Interval to try resend messages after
 	RetryInterval time.Duration
+
+	Logger slog.Logger
 }
 
 func NewInstance(opts *InstanceOptions) (*Instance, error) {
@@ -48,6 +51,7 @@ func NewInstance(opts *InstanceOptions) (*Instance, error) {
 	i := Instance{
 		certs:     []tls.Certificate{*opts.InstanceCert},
 		authority: opts.CA,
+		logger:    opts.Logger,
 	}
 
 	database, err := sql.Open("sqlite", opts.DatabasePath)
