@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
-	"math"
 	"net"
 	"sync"
 	"time"
@@ -278,8 +277,8 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 		inst.l.RUnlock()
 	}
 
-	// MaxUint32 is the message ID for unreliable messages
-	if mesId != uint32(math.MaxUint32) && shouldAck {
+	// 0 is the message ID for unreliable messages
+	if mesId != uint32(0) && shouldAck {
 		// Send ack
 		ack := buildAck(mesId)
 		connections.SendBytes(ack, conn)
@@ -348,7 +347,7 @@ func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 	recipientConns, recipientIds := inst.findRecipients(channel, key)
 
 	// This represents an unreliable message
-	id := uint32(math.MaxUint32)
+	id := uint32(0)
 	if reliable {
 		id = db.SaveMessage(body, recipientIds, channel, key, inst.db)
 	}
