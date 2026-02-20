@@ -51,6 +51,11 @@ const (
 	AckMessageCode
 )
 
+const (
+	AckSuccess byte = iota
+	AckError
+)
+
 const ReservedTolliverChannel = "tolliver"
 
 var ErrConnAlreadyExists = errors.New("This instance already has a connection to the requested remote address")
@@ -171,9 +176,9 @@ func (inst *Instance) retry(interval time.Duration) {
 		notAcked := db.GetWork(inst.db)
 
 		inst.l.RLock()
-		for k, v := range notAcked {
-			if c := inst.conns[k]; c != nil {
-				connections.SendBytes(v, c)
+		for _, v := range notAcked {
+			if c := inst.conns[v.Receiver]; c != nil {
+				connections.SendBytes(buildMes(v.Payload, v.MesId, v.Channel, v.Key), c)
 			}
 		}
 		inst.l.RUnlock()
@@ -238,8 +243,13 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 }
 
 func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
-	mesId, err := r.ReadUint32()
+	var status byte
+	var mesId uint64
+	err := r.ReadAll(nil, &status, &mesId)
 	if err != nil {
+		return
+	}
+	if status != AckSuccess || mesId == 0 {
 		return
 	}
 
@@ -247,23 +257,40 @@ func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
-	var chanLen, keyLen, bodyLen, mesId uint32
-	var channel, key string
-	err := r.ReadAll(nil, &chanLen, &keyLen, &bodyLen, &mesId)
+	var mesId, chanLen uint64
+	err := r.ReadAll(nil, &mesId, &chanLen)
 	if err != nil {
 		return
 	}
-
-	err = r.ReadAll([]uint32{chanLen, keyLen}, &channel, &key)
+	channel, err := r.ReadString(chanLen)
 	if err != nil {
+		return
 	}
+	keyLen, err := r.ReadUint64()
+	if err != nil {
+		return
+	}
+	key, err := r.ReadString(keyLen)
+	if err != nil {
+		return
+	}
+	bodyLen, err := r.ReadUint64()
+	if err != nil {
+		return
+	}
+	maxInt := uint64(int(^uint(0) >> 1))
+	if bodyLen > maxInt {
+		return
+	}
+
+	var shouldAck = true
 
 	var shouldAck = true
 
 	if channel == ReservedTolliverChannel {
 		inst.systemMessage(r, id, bodyLen)
 	} else {
-		body := make([]byte, bodyLen)
+		body := make([]byte, int(bodyLen))
 		r.FillBuf(body)
 
 		inst.l.RLock()
@@ -278,56 +305,61 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	}
 
 	// 0 is the message ID for unreliable messages
-	if mesId != uint32(0) && shouldAck {
-		// Send ack
-		ack := buildAck(mesId)
+	if mesId != 0 && shouldAck {
+		ack := buildAck(AckSuccess, mesId)
 		connections.SendBytes(ack, conn)
 	}
 }
 
-func buildAck(id uint32) []byte {
+func buildAck(status byte, id uint64) []byte {
 	w := binary.NewWriter()
-	w.WriteAll(byte(4), id)
+	w.WriteAll(byte(4), status, id)
 	return w.Join()
 }
 
-func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLength uint32) {
-	var code byte
-	var chanLen, keyLen uint32
-	err := r.ReadAll(nil, &code, &chanLen, &keyLen)
-	if err != nil || chanLen+keyLen+9 != expectedLength || !(code == 0 || code == 1) {
+func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLength uint64) {
+	code, err := r.ReadByte()
+	if err != nil || !(code == 0 || code == 1) {
+		return
+	}
+	var entries []common.SubcriptionInfo
+	if err := r.ReadSubs(&entries); err != nil {
 		return
 	}
 
-	var channel, key string
-	err = r.ReadAll([]uint32{chanLen, keyLen}, &channel, &key)
-	if err != nil {
+	bytesRead := uint64(1 + 8)
+	for _, entry := range entries {
+		bytesRead += 8 + uint64(len(entry.Channel)) + 8 + uint64(len(entry.Key))
+	}
+	if bytesRead != expectedLength {
 		return
 	}
 
-	if code == 0 {
-		db.Subscribe(channel, key, id, inst.db)
-	}
-	if code == 1 {
-		db.Unsubscribe(channel, key, id, inst.db)
+	for _, entry := range entries {
+		if code == 0 {
+			db.Subscribe(entry.Channel, entry.Key, id, inst.db)
+		}
+		if code == 1 {
+			db.Unsubscribe(entry.Channel, entry.Key, id, inst.db)
+		}
 	}
 }
 
 func buildSub(channel, key string) []byte {
 	w := binary.NewWriter()
-	w.WriteAll(byte(0), uint32(len(channel)), uint32(len(key)), channel, key)
+	w.WriteAll(byte(0), []common.SubcriptionInfo{{Channel: channel, Key: key}})
 	return w.Join()
 }
 
 func buildUnSub(channel, key string) []byte {
 	w := binary.NewWriter()
-	w.WriteAll(byte(1), uint32(len(channel)), uint32(len(key)), channel, key)
+	w.WriteAll(byte(1), []common.SubcriptionInfo{{Channel: channel, Key: key}})
 	return w.Join()
 }
 
-func buildMes(body []byte, id uint32, channel, key string) []byte {
+func buildMes(body []byte, id uint64, channel, key string) []byte {
 	w := binary.NewWriter()
-	w.WriteAll(byte(3), uint32(len(channel)), uint32(len(key)), uint32(len(body)), id, channel, key, body)
+	w.WriteAll(byte(3), id, uint64(len(channel)), channel, uint64(len(key)), key, uint64(len(body)), body)
 	return w.Join()
 }
 
@@ -347,7 +379,7 @@ func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 	recipientConns, recipientIds := inst.findRecipients(channel, key)
 
 	// This represents an unreliable message
-	id := uint32(0)
+	id := uint64(0)
 	if reliable {
 		id = db.SaveMessage(body, recipientIds, channel, key, inst.db)
 	}

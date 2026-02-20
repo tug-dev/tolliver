@@ -23,9 +23,12 @@ func AwaitHandshake(conn net.Conn, instanceId uuid.UUID, subscriptions []common.
 	}
 
 	code := HandshakeSuccess
+	// Currently backwards compatibility is not supported
 	if req.Version < common.TolliverVersion {
 		code = HandshakeIncompatible
 	}
+
+	// Request to see if new version is compatible
 	if req.Version > common.TolliverVersion {
 		code = HandshakeRequestCompatible
 	}
@@ -38,6 +41,9 @@ func AwaitHandshake(conn net.Conn, instanceId uuid.UUID, subscriptions []common.
 			return uuid.UUID{}, nil, err
 		}
 	}
+	if code == HandshakeIncompatible {
+		return req.Id, req.Subs, IncompatibleVersions
+	}
 
 	return req.Id, req.Subs, nil
 }
@@ -48,7 +54,7 @@ func parseHandshakeRequest(r *binary.Reader) (handshakeReq, error) {
 	var id uuid.UUID
 	var subs []common.SubcriptionInfo
 
-	err := r.ReadAll(nil, &code, &version, &id, subs)
+	err := r.ReadAll(nil, &code, &version, &id)
 	if err != nil {
 		return handshakeReq{}, err
 	}
@@ -56,13 +62,16 @@ func parseHandshakeRequest(r *binary.Reader) (handshakeReq, error) {
 	if code != HandshakeReqMessageCode {
 		return handshakeReq{}, UnexpectedMessageCode
 	}
+	if err := r.ReadSubs(&subs); err != nil {
+		return handshakeReq{}, err
+	}
 
 	return handshakeReq{Version: version, Id: id, Subs: subs}, nil
 }
 
 func buildHandshakeRes(id uuid.UUID, subscriptions []common.SubcriptionInfo, code byte) []byte {
 	w := binary.NewWriter()
-	w.WriteAll(HandshakeResMessageCode, common.TolliverVersion, id, code, uint32(len(subscriptions)), subscriptions)
+	w.WriteAll(HandshakeResMessageCode, common.TolliverVersion, id, code, subscriptions)
 
 	return w.Join()
 }
@@ -76,8 +85,11 @@ func parseHandshakeFinal(r *binary.Reader) error {
 	if code != HandshakeFinMessageCode {
 		return UnexpectedMessageCode
 	}
-	if status != HandshakeBackwardsCompatible {
+	if status == HandshakeFinalSuccess {
+		return nil
+	}
+	if status == HandshakeFinalIncompatible {
 		return IncompatibleVersions
 	}
-	return nil
+	return HandshakeFailed
 }
