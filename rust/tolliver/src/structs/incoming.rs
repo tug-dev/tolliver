@@ -6,8 +6,8 @@ use std::{
 use log::warn;
 
 use crate::{
-	server::TolliverServer, VersionType, API_KEY_LENGTH, HANDSHAKE_CODE_LENGTH, TEMP_API_KEY,
-	VERSION, VERSION_LENGTH,
+	server::TolliverServer, MessageType, MessageTypeNumber, VersionType, API_KEY_LENGTH,
+	HANDSHAKE_CODE_LENGTH, MESSAGE_TYPE_LENGTH, TEMP_API_KEY, VERSION, VERSION_LENGTH,
 };
 
 use super::{handshake::HandshakeCode, tolliver_connection::TolliverConnection};
@@ -30,6 +30,7 @@ impl<'a> Iterator for Incoming<'a> {
 fn tcp_to_tolliver_connection(stream: io::Result<TcpStream>) -> Option<TolliverConnection> {
 	let mut stream = stream.unwrap();
 
+	check_message_type(&mut stream)?;
 	check_version(&mut stream)?;
 	check_api_key(&mut stream)?;
 	// Send success to client
@@ -49,6 +50,27 @@ fn tcp_to_tolliver_connection(stream: io::Result<TcpStream>) -> Option<TolliverC
 			return None;
 		}
 	}
+}
+
+fn check_message_type(stream: &mut TcpStream) -> Option<()> {
+	let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
+	match stream.read_exact(&mut message_type_buf) {
+		Ok(()) => {}
+		Err(e) => {
+			warn!("Handshake failed: could not read message type: {e}");
+			return None;
+		}
+	};
+	let message_type = MessageTypeNumber::from_be_bytes(message_type_buf);
+
+	if message_type != (MessageType::HandshakeRequest as MessageTypeNumber) {
+		let handshake_code = HandshakeCode::IncompatibleVersion(0).status_code();
+		write_response(stream, handshake_code).unwrap_or_else(|e| {
+			warn!("Handshake failed: could not send incompatible version error: {e}")
+		});
+		return None;
+	}
+	Some(())
 }
 
 fn check_version(stream: &mut TcpStream) -> Option<()> {

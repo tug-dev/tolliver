@@ -9,6 +9,7 @@ type VersionType = u64;
 /// The "server status code type" is the type of the literal status code. It
 /// should correspond with the number of bytes in SERVER_RESPONSE_CODE_LENGTH.
 pub type HandshakeCodeType = u8;
+pub type MessageTypeNumber = u8;
 
 /// The version of the protocol
 const VERSION: VersionType = 1;
@@ -18,6 +19,11 @@ const VERSION_LENGTH: usize = 8;
 const API_KEY_LENGTH: usize = 32;
 /// The number of bytes the server success/error response is encoded in
 const HANDSHAKE_CODE_LENGTH: usize = 1;
+/// The number of bytes the message type is encoded in
+const MESSAGE_TYPE_LENGTH: usize = 1;
+pub enum MessageType {
+	HandshakeRequest = 0,
+}
 
 // TODO Use env var
 const TEMP_API_KEY: [u8; API_KEY_LENGTH] = [0; API_KEY_LENGTH];
