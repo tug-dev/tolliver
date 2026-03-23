@@ -21,8 +21,10 @@ const UUID_LENGTH: usize = 16;
 const HANDSHAKE_CODE_LENGTH: usize = 1;
 /// The number of bytes the message type is encoded in
 const MESSAGE_TYPE_LENGTH: usize = 1;
+/// The type of message that is being sent
 pub enum MessageType {
 	HandshakeRequest = 0,
+	HandshakeResponse = 1,
 }
 
 #[cfg(test)]

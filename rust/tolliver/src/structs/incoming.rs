@@ -1,5 +1,5 @@
 use std::{
-	io::{self, Read, Write},
+	io::{self, IoSlice, Read, Write},
 	net::TcpStream,
 };
 
@@ -108,12 +108,20 @@ fn get_remote_uuid(stream: &mut TcpStream) -> Option<Uuid> {
 }
 
 fn write_response(stream: &mut TcpStream, code: u8) -> io::Result<()> {
+	let message_type = MessageType::HandshakeResponse as MessageTypeNumber;
+	let message_type_bytes = message_type.to_be_bytes();
+	debug_assert_eq!(message_type_bytes.len(), MESSAGE_TYPE_LENGTH);
+
 	let handshake_code_bytes = code.to_be_bytes();
 	debug_assert_eq!(handshake_code_bytes.len(), HANDSHAKE_CODE_LENGTH);
-	stream.write_all(&handshake_code_bytes)?;
 
 	let version_bytes = VERSION.to_be_bytes();
 	debug_assert_eq!(version_bytes.len(), VERSION_LENGTH);
-	stream.write_all(&version_bytes)?;
+
+	stream.write_vectored(&[
+		IoSlice::new(&message_type_bytes),
+		IoSlice::new(&handshake_code_bytes),
+		IoSlice::new(&version_bytes),
+	])?;
 	Ok(())
 }
