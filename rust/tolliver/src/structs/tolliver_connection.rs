@@ -5,6 +5,7 @@ use std::{
 };
 
 use prost::Message;
+use uuid::Uuid;
 
 use crate::error::TolliverError;
 
@@ -28,13 +29,18 @@ const _: () = {
 pub struct TolliverConnection {
 	pub stream: TcpStream,
 	db: rusqlite::Connection,
+	remote_uuid: Uuid,
 }
 
 impl TolliverConnection {
-	pub fn new(stream: TcpStream) -> Result<Self, TolliverError> {
+	pub fn new(stream: TcpStream, remote_uuid: Uuid) -> Result<Self, TolliverError> {
 		let db = rusqlite::Connection::open(DB_PATH)?;
 		Self::init_db(&db)?;
-		let mut conn = Self { stream, db };
+		let mut conn = Self {
+			stream,
+			db,
+			remote_uuid,
+		};
 		for message in conn.read_from_disk()? {
 			conn.complete_send(message)?;
 		}
@@ -231,6 +237,8 @@ mod tests {
 
 	use std::net::{TcpListener, TcpStream};
 
+	use uuid::Uuid;
+
 	use crate::structs::tolliver_connection::UnsentMessage;
 
 	use super::TolliverConnection;
@@ -242,7 +250,11 @@ mod tests {
 		let listener_addr = listener.local_addr().unwrap();
 		let stream = TcpStream::connect(listener_addr).unwrap();
 
-		TolliverConnection { stream, db }
+		TolliverConnection {
+			stream,
+			db,
+			remote_uuid: Uuid::nil(),
+		}
 	}
 
 	#[test]

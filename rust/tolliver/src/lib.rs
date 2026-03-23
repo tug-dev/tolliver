@@ -15,8 +15,8 @@ pub type MessageTypeNumber = u8;
 const VERSION: VersionType = 1;
 /// The number of bytes the version number is encoded in
 const VERSION_LENGTH: usize = 8;
-/// The number of bytes the API key is encoded in
-const API_KEY_LENGTH: usize = 32;
+/// The number of bytes the UUID is encoded in
+const UUID_LENGTH: usize = 16;
 /// The number of bytes the server success/error response is encoded in
 const HANDSHAKE_CODE_LENGTH: usize = 1;
 /// The number of bytes the message type is encoded in
@@ -24,9 +24,6 @@ const MESSAGE_TYPE_LENGTH: usize = 1;
 pub enum MessageType {
 	HandshakeRequest = 0,
 }
-
-// TODO Use env var
-const TEMP_API_KEY: [u8; API_KEY_LENGTH] = [0; API_KEY_LENGTH];
 
 #[cfg(test)]
 mod tests {
@@ -39,6 +36,7 @@ mod tests {
 
 	use server::TolliverServer;
 	use structs::tolliver_connection::ProtoIdType;
+	use uuid::Uuid;
 
 	use super::*;
 
@@ -50,7 +48,7 @@ mod tests {
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
-			client::connect(address, TEMP_API_KEY).unwrap();
+			client::connect(address, Uuid::nil()).unwrap();
 		});
 		for _connection in incoming {
 			return;
@@ -69,7 +67,7 @@ mod tests {
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
-			let mut conn = client::connect(address, TEMP_API_KEY).unwrap();
+			let mut conn = client::connect(address, Uuid::nil()).unwrap();
 			conn.unreliable_send(EXAMPLE_PROTO_ID, &shirt).unwrap();
 		});
 		for mut connection in incoming {
@@ -95,7 +93,7 @@ mod tests {
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
-			let mut conn = client::connect(address, TEMP_API_KEY).unwrap();
+			let mut conn = client::connect(address, Uuid::nil()).unwrap();
 			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
 			conn.unreliable_send(EXAMPLE_PROTO_ID, &blue_shirt).unwrap();
 			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();

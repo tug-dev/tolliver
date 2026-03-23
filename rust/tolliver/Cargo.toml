@@ -11,5 +11,11 @@ prost = "0.14.1"
 # SQL
 rusqlite = "0.37.0"
 
+[dependencies.uuid]
+version = "1.21.0"
+features = [
+	"v7",
+]
+
 [build-dependencies]
 prost-build = "0.14.1"
