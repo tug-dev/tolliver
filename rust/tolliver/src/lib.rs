@@ -46,7 +46,7 @@ mod tests {
 
 	#[test]
 	fn start_server() {
-		let server = TolliverServer::bind().unwrap();
+		let server = TolliverServer::bind(Uuid::max()).unwrap();
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
@@ -65,7 +65,7 @@ mod tests {
 		shirt.set_size(items::shirt::Size::Large);
 		let expected_shirt = shirt.clone();
 
-		let server = TolliverServer::bind().unwrap();
+		let server = TolliverServer::bind(Uuid::max()).unwrap();
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
@@ -91,7 +91,7 @@ mod tests {
 		blue_shirt.set_size(items::shirt::Size::Medium);
 		let expected_blue_shirt = blue_shirt.clone();
 
-		let server = TolliverServer::bind().unwrap();
+		let server = TolliverServer::bind(Uuid::max()).unwrap();
 		let incoming = server.run();
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {

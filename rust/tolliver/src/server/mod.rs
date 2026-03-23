@@ -1,4 +1,5 @@
 use log::info;
+use uuid::Uuid;
 
 use crate::structs::incoming::Incoming;
 use std::{
@@ -8,6 +9,7 @@ use std::{
 
 pub struct TolliverServer {
 	pub listener: TcpListener,
+	pub uuid: Uuid,
 }
 
 impl TolliverServer {
@@ -16,8 +18,8 @@ impl TolliverServer {
 	/// # Errors
 	///
 	/// This function will return an [`io::Error`] if the server cannot be started.
-	pub fn bind() -> io::Result<Self> {
-		Self::bind_at("0.0.0.0:0")
+	pub fn bind(uuid: Uuid) -> io::Result<Self> {
+		Self::bind_at("0.0.0.0:0", uuid)
 	}
 
 	/// Starts the Tolliver server at a specific address, similar to `TcpListener`
@@ -25,12 +27,13 @@ impl TolliverServer {
 	/// # Errors
 	///
 	/// This function will return an [`io::Error`] if the server cannot be started.
-	pub fn bind_at<A>(addr: A) -> io::Result<Self>
+	pub fn bind_at<A>(addr: A, uuid: Uuid) -> io::Result<Self>
 	where
 		A: net::ToSocketAddrs,
 	{
 		let binded_data = Self {
 			listener: TcpListener::bind(addr)?,
+			uuid,
 		};
 
 		Ok(binded_data)

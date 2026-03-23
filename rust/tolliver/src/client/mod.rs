@@ -22,6 +22,7 @@ where
 	let mut stream = TcpStream::connect(addr)?;
 
 	send_handshake_request(uuid, &mut stream)?;
+	// Pass some errors to handshake final
 	get_handshake_response(stream)
 }
 
@@ -47,15 +48,21 @@ fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> Result<(), Hand
 fn get_handshake_response(mut stream: TcpStream) -> Result<TolliverConnection, HandshakeError> {
 	let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
 	let message_type_io_slice = IoSliceMut::new(&mut message_type_buf);
-	let mut handshake_code_buf = [0; HANDSHAKE_CODE_LENGTH];
-	let handshake_code_io_slice = IoSliceMut::new(&mut handshake_code_buf);
+
 	let mut version_buf = [0; VERSION_LENGTH];
 	let version_io_slice = IoSliceMut::new(&mut version_buf);
 
+	let mut uuid_buf = [0; UUID_LENGTH];
+	let uuid_io_slice = IoSliceMut::new(&mut uuid_buf);
+
+	let mut handshake_code_buf = [0; HANDSHAKE_CODE_LENGTH];
+	let handshake_code_io_slice = IoSliceMut::new(&mut handshake_code_buf);
+
 	stream.read_vectored(&mut [
 		message_type_io_slice,
-		handshake_code_io_slice,
 		version_io_slice,
+		uuid_io_slice,
+		handshake_code_io_slice,
 	])?;
 	let message_type_num = MessageTypeNumber::from_be_bytes(message_type_buf);
 	let handshake_response_number = MessageType::HandshakeResponse as MessageTypeNumber;
@@ -66,10 +73,10 @@ fn get_handshake_response(mut stream: TcpStream) -> Result<TolliverConnection, H
 		)));
 	}
 	let version = VersionType::from_be_bytes(version_buf);
+	let uuid = Uuid::from_bytes(uuid_buf);
 
 	match handshake_code_buf {
-		//TODO Make non-nil
-		[0] => Ok(TolliverConnection::new(stream, Uuid::nil())?),
+		[0] => Ok(TolliverConnection::new(stream, uuid)?),
 		[code] => Err(HandshakeError::Result(HandshakeCode::from_status_code(
 			code, version,
 		))),
