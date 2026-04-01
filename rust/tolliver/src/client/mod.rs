@@ -23,7 +23,8 @@ where
 
 	send_handshake_request(uuid, &mut stream)?;
 	// Pass some errors to handshake final
-	get_handshake_response(stream)
+	let remote_uuid = get_handshake_response(&mut stream)?;
+	Ok(TolliverConnection::new(stream, remote_uuid)?)
 }
 
 fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> Result<(), HandshakeError> {
@@ -45,7 +46,7 @@ fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> Result<(), Hand
 	Ok(())
 }
 
-fn get_handshake_response(mut stream: TcpStream) -> Result<TolliverConnection, HandshakeError> {
+fn get_handshake_response(stream: &mut TcpStream) -> Result<Uuid, HandshakeError> {
 	let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
 	let message_type_io_slice = IoSliceMut::new(&mut message_type_buf);
 
@@ -76,7 +77,7 @@ fn get_handshake_response(mut stream: TcpStream) -> Result<TolliverConnection, H
 	let uuid = Uuid::from_bytes(uuid_buf);
 
 	match handshake_code_buf {
-		[0] => Ok(TolliverConnection::new(stream, uuid)?),
+		[0] => Ok(uuid),
 		[code] => Err(HandshakeError::Result(HandshakeCode::from_status_code(
 			code, version,
 		))),

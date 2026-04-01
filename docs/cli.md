@@ -12,7 +12,7 @@ start 127.0.0.1:8888
 
 Now if you run the CLI in a different terminal, you can connect to it and send a message:
 ```tolliver
-connect 127.0.0.1:8888 0000000000000000000000000000000000000000000000000000000000000000
+connect 127.0.0.1:8888
 send proto_files/items.proto Shirt color: "Red" size: LARGE
 ```
 

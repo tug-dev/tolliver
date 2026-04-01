@@ -11,14 +11,13 @@ use structs::Function;
 use tolliver::{
 	client::connect, server::TolliverServer, structs::tolliver_connection::TolliverConnection,
 };
-use type_parsing::hex_string_to_bytes;
+use uuid::Uuid;
 
 pub mod dynamic_proto;
 pub mod parser;
 pub mod receive;
 pub mod send;
 pub mod structs;
-pub mod type_parsing;
 
 fn main() {
 	let connections = Arc::new(Mutex::new(Vec::new()));
@@ -54,36 +53,26 @@ fn main() {
 }
 
 fn handle_connection(function: Function, connections: &mut Vec<TolliverConnection>) {
-	let (addr, api_key_string) = match (function.args.get(0), function.args.get(1)) {
-		(Some(addr), Some(api_key)) => (addr, api_key),
+	let uuid = match get_uuid(function.args.get(1)) {
+		Some(res) => res,
+		None => return,
+	};
+	let addr = match function.args.get(0) {
+		Some(addr) => addr,
 		_ => {
-			eprintln!("Usage: connect <address> <api_key>");
+			eprintln!("Usage: connect <address> [uuid]");
 			return;
 		}
 	};
-	let api_key_vec = match hex_string_to_bytes(api_key_string) {
-		Ok(key) => key,
-		Err(e) => {
-			eprintln!("Error parsing API key: {e}");
-			return;
-		}
-	};
-	let api_key: [u8; 32] = match api_key_vec.try_into() {
-		Ok(key) => key,
-		Err(_) => {
-			eprintln!("API key cannot be converted to bytes (possibly wrong size)");
-			return;
-		}
-	};
-	let connection = match connect(addr, api_key) {
+	let connection = match connect(addr, uuid) {
 		Ok(res) => res,
 		Err(e) => {
 			eprintln!("Error connecting: {e}");
 			return;
 		}
 	};
+	println!("Connection established to {} with UUID {}", addr, uuid);
 	connections.push(connection);
-	println!("Connection established!")
 }
 
 /// Starts a Tolliver server and returns a join handle to the thread where it
@@ -92,9 +81,10 @@ fn handle_server_start(
 	function: Function,
 	connections: Arc<Mutex<Vec<TolliverConnection>>>,
 ) -> Option<thread::JoinHandle<()>> {
-	let server_result = match function.args.first() {
-		Some(addr) => TolliverServer::bind_at(addr),
-		None => TolliverServer::bind(),
+	let uuid = get_uuid(function.args.get(1))?;
+	let server_result = match function.args.get(0) {
+		Some(addr) => TolliverServer::bind_at(addr, uuid),
+		None => TolliverServer::bind(uuid),
 	};
 	let server = match server_result {
 		Ok(res) => res,
@@ -104,8 +94,9 @@ fn handle_server_start(
 		}
 	};
 	println!(
-		"Server started at {}",
-		server.listener.local_addr().unwrap()
+		"Server started at {} with UUID {}",
+		server.listener.local_addr().unwrap(),
+		server.uuid
 	);
 	let handle = thread::spawn(move || {
 		for conn in server.run() {
@@ -113,6 +104,20 @@ fn handle_server_start(
 		}
 	});
 	Some(handle)
+}
+
+fn get_uuid(string: Option<&String>) -> Option<Uuid> {
+	let uuid_result = match string {
+		Some(uuid_str) => Uuid::parse_str(uuid_str),
+		None => Ok(Uuid::now_v7()),
+	};
+	match uuid_result {
+		Ok(res) => Some(res),
+		Err(e) => {
+			eprintln!("Invalid UUID: {e}");
+			None
+		}
+	}
 }
 
 fn get_user_input() -> String {

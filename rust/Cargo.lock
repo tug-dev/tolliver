@@ -593,6 +593,7 @@ dependencies = [
  "protobuf",
  "protobuf-parse",
  "tolliver",
+ "uuid",
 ]
 
 [[package]]

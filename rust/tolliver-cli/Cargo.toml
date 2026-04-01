@@ -10,3 +10,9 @@ tolliver = { path = "../tolliver" }
 protobuf = "3.7.2"
 protobuf-parse = "3.7.2"
 
+[dependencies.uuid]
+version = "1.21.0"
+features = [
+	"v7",
+]
+
