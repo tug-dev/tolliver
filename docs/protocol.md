@@ -87,6 +87,15 @@ Repeated for each channel that needs to be (un)subscribed to:
   Number of bytes specified - UTF-8 encoded key name
 ```
 
+### Ping Messages
+
+Ping messages are used to keep alive connections. They are a single byte:
+
+```
+1 byte - 5 for Ping
+1 byte - 6 for Pong
+```
+
 ## Status codes
 
 ### Handshake response status codes
