@@ -8,11 +8,11 @@ use uuid::Uuid;
 use crate::{
 	error::TolliverError,
 	structs::{
-		handshake::{HandshakeCode, HandshakeError},
+		handshake::{HandshakeCode, HandshakeError, HandshakeFinalCode},
 		tolliver_connection::TolliverConnection,
 	},
-	MessageType, MessageTypeNumber, VersionType, HANDSHAKE_CODE_LENGTH, MESSAGE_TYPE_LENGTH,
-	UUID_LENGTH, VERSION, VERSION_LENGTH,
+	MessageType, MessageTypeNumber, StatusCode, VersionType, HANDSHAKE_CODE_LENGTH,
+	MESSAGE_TYPE_LENGTH, STATUS_CODE_LENGTH, UUID_LENGTH, VERSION, VERSION_LENGTH,
 };
 
 pub fn connect<A>(addr: A, uuid: Uuid) -> Result<TolliverConnection, HandshakeError>
@@ -24,6 +24,7 @@ where
 	send_handshake_request(uuid, &mut stream)?;
 	// Pass some errors to handshake final
 	let remote_uuid = get_handshake_response(&mut stream)?;
+	send_handshake_final(&mut stream)?;
 	Ok(TolliverConnection::new(stream, remote_uuid)?)
 }
 
@@ -82,4 +83,20 @@ fn get_handshake_response(stream: &mut TcpStream) -> Result<Uuid, HandshakeError
 			code, version,
 		))),
 	}
+}
+
+fn send_handshake_final(stream: &mut TcpStream) -> Result<(), HandshakeError> {
+	let message_type = MessageType::HandshakeFinal as MessageTypeNumber;
+	let message_type_bytes = message_type.to_be_bytes();
+	debug_assert_eq!(message_type_bytes.len(), MESSAGE_TYPE_LENGTH);
+
+	let status_code = HandshakeFinalCode::Success as StatusCode;
+	let status_code_bytes = status_code.to_be_bytes();
+	debug_assert_eq!(status_code_bytes.len(), STATUS_CODE_LENGTH);
+
+	stream.write_vectored(&[
+		IoSlice::new(&message_type_bytes),
+		IoSlice::new(&status_code_bytes),
+	])?;
+	Ok(())
 }

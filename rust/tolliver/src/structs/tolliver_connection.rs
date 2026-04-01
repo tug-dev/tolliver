@@ -29,7 +29,7 @@ const _: () = {
 pub struct TolliverConnection {
 	pub stream: TcpStream,
 	db: rusqlite::Connection,
-	remote_uuid: Uuid,
+	pub remote_uuid: Uuid,
 }
 
 impl TolliverConnection {

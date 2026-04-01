@@ -1,5 +1,5 @@
 use std::{
-	io::{self, IoSlice, Read, Write},
+	io::{self, IoSlice, IoSliceMut, Read, Write},
 	net::TcpStream,
 };
 
@@ -7,8 +7,9 @@ use log::warn;
 use uuid::Uuid;
 
 use crate::{
-	server::TolliverServer, MessageType, MessageTypeNumber, VersionType, HANDSHAKE_CODE_LENGTH,
-	MESSAGE_TYPE_LENGTH, UUID_LENGTH, VERSION, VERSION_LENGTH,
+	server::TolliverServer, structs::handshake::HandshakeFinalCode, MessageType, MessageTypeNumber,
+	StatusCode, VersionType, HANDSHAKE_CODE_LENGTH, MESSAGE_TYPE_LENGTH, STATUS_CODE_LENGTH,
+	UUID_LENGTH, VERSION, VERSION_LENGTH,
 };
 
 use super::{handshake::HandshakeCode, tolliver_connection::TolliverConnection};
@@ -24,6 +25,8 @@ impl<'a> Iterator for Incoming<'a> {
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let stream = self.listener.listener.accept().map(|p| p.0);
+		// TODO Right now, if a remote sends invalid data this function will return
+		// `None` and the iterator will stop.
 		tcp_to_tolliver_connection(stream, self.listener.uuid)
 	}
 }
@@ -35,8 +38,15 @@ fn tcp_to_tolliver_connection(
 	let mut stream = stream.unwrap();
 
 	let remote_uuid = get_handshake_request(&mut stream, uuid)?;
-	// Send success to client
-	send_handshake_response(stream, uuid, remote_uuid)
+	send_handshake_response(&mut stream, uuid);
+	check_handshake_final(&mut stream)?;
+	match TolliverConnection::new(stream, remote_uuid) {
+		Ok(conn) => Some(conn),
+		Err(e) => {
+			warn!("Error creating TolliverConnection: {e}");
+			None
+		}
+	}
 }
 
 fn get_handshake_request(stream: &mut TcpStream, uuid: Uuid) -> Option<Uuid> {
@@ -45,20 +55,10 @@ fn get_handshake_request(stream: &mut TcpStream, uuid: Uuid) -> Option<Uuid> {
 	get_remote_uuid(stream)
 }
 
-fn send_handshake_response(
-	mut stream: TcpStream,
-	uuid: Uuid,
-	remote_uuid: Uuid,
-) -> Option<TolliverConnection> {
+fn send_handshake_response(stream: &mut TcpStream, uuid: Uuid) -> Option<()> {
 	let success_code = HandshakeCode::Success.status_code();
-	match write_response(&mut stream, uuid, success_code) {
-		Ok(()) => match TolliverConnection::new(stream, remote_uuid) {
-			Ok(conn) => Some(conn),
-			Err(e) => {
-				warn!("Error creating TolliverConnection: {e}");
-				None
-			}
-		},
+	match write_response(stream, uuid, success_code) {
+		Ok(()) => Some(()),
 		Err(e) => {
 			warn!("Failed to send success to client: {e}");
 			// We don't know how many bytes have been sent to the client so just
@@ -143,4 +143,27 @@ fn write_response(stream: &mut TcpStream, uuid: Uuid, code: u8) -> io::Result<()
 		IoSlice::new(&handshake_code_bytes),
 	])?;
 	Ok(())
+}
+
+fn check_handshake_final(stream: &mut TcpStream) -> Option<()> {
+	let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
+	let message_type_io_slice = IoSliceMut::new(&mut message_type_buf);
+
+	let mut status_code_buf = [0; STATUS_CODE_LENGTH];
+	let status_code_io_slice = IoSliceMut::new(&mut status_code_buf);
+
+	stream
+		.read_vectored(&mut [message_type_io_slice, status_code_io_slice])
+		.ok()?;
+
+	let message_type = MessageTypeNumber::from_be_bytes(message_type_buf);
+	let status_code = StatusCode::from_be_bytes(status_code_buf);
+
+	let handshake_final = MessageType::HandshakeFinal as MessageTypeNumber;
+	let success_status = HandshakeFinalCode::Success as StatusCode;
+	if message_type == handshake_final && status_code == success_status {
+		Some(())
+	} else {
+		None
+	}
 }

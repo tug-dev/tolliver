@@ -25,7 +25,13 @@ const MESSAGE_TYPE_LENGTH: usize = 1;
 pub enum MessageType {
 	HandshakeRequest = 0,
 	HandshakeResponse = 1,
+	HandshakeFinal = 2,
 }
+
+/// The general status code type.
+pub type StatusCode = u8;
+/// The number of bytes a [StatusCode] is encoded in.
+const STATUS_CODE_LENGTH: usize = 1;
 
 #[cfg(test)]
 mod tests {

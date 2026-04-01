@@ -15,6 +15,13 @@ pub enum HandshakeCode {
 	UnknowErrorCode(HandshakeCodeType),
 }
 
+#[derive(Debug, PartialEq)]
+pub enum HandshakeFinalCode {
+	Success = 0,
+	GeneralError = 1,
+	IncompatibleVersion = 2,
+}
+
 impl Display for HandshakeCode {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
