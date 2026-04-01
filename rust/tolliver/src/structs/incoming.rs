@@ -34,10 +34,22 @@ fn tcp_to_tolliver_connection(
 ) -> Option<TolliverConnection> {
 	let mut stream = stream.unwrap();
 
-	check_message_type(&mut stream, uuid)?;
-	check_version(&mut stream, uuid)?;
-	let remote_uuid = get_remote_uuid(&mut stream)?;
+	let remote_uuid = get_handshake_request(&mut stream, uuid)?;
 	// Send success to client
+	send_handshake_response(stream, uuid, remote_uuid)
+}
+
+fn get_handshake_request(stream: &mut TcpStream, uuid: Uuid) -> Option<Uuid> {
+	check_message_type(stream, uuid)?;
+	check_version(stream, uuid)?;
+	get_remote_uuid(stream)
+}
+
+fn send_handshake_response(
+	mut stream: TcpStream,
+	uuid: Uuid,
+	remote_uuid: Uuid,
+) -> Option<TolliverConnection> {
 	let success_code = HandshakeCode::Success.status_code();
 	match write_response(&mut stream, uuid, success_code) {
 		Ok(()) => match TolliverConnection::new(stream, remote_uuid) {
