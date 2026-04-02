@@ -16,7 +16,7 @@ type Delivery struct {
 }
 
 func GetWork(db *sql.DB) []Delivery {
-	res, err := db.Query("SELECT (message_id, recipient_id) FROM delivery")
+	res, err := db.Query("SELECT message_id, recipient_id FROM delivery")
 	if err != nil {
 		panic(err)
 	}

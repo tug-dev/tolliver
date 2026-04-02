@@ -27,7 +27,7 @@ type Instance struct {
 	callbacks map[*common.SubcriptionInfo][]func([]byte) bool
 	db        *sql.DB
 	l         sync.RWMutex
-	logger    slog.Logger
+	logger    *slog.Logger
 }
 
 type DialError struct {
@@ -68,10 +68,10 @@ func (inst *Instance) NewConnection(addr RemoteAddr) {
 
 func (inst *Instance) newConnection(addr RemoteAddr) {
 	for {
-		opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: addr.ServerName, InsecureSkipVerify: true}
+		opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, ServerName: addr.ServerName}
 		conn, err := tls.Dial("tcp", addr.String(), opts)
 		if err != nil {
-			inst.logger.Error("Failed to connect to " + addr.Addr.String())
+			inst.logger.Error("Failed to connect to " + addr.Addr.String() + " :" + err.Error())
 			continue
 		}
 
@@ -186,7 +186,7 @@ func (inst *Instance) retry(interval time.Duration) {
 }
 
 func (inst *Instance) listenOn(laddr string) error {
-	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority, InsecureSkipVerify: true}
+	opts := &tls.Config{Certificates: inst.certs, RootCAs: inst.authority}
 	lst, err := tls.Listen("tcp", laddr, opts)
 	if err != nil {
 		return err
@@ -282,8 +282,6 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	if bodyLen > maxInt {
 		return
 	}
-
-	var shouldAck = true
 
 	var shouldAck = true
 

@@ -9,7 +9,7 @@ import (
 // TODO: check about sqlite enforcing uniqueness constraints and maybe use transaction
 
 func GetSubscriberUUIDs(channel, key string, db *sql.DB) []uuid.UUID {
-	res, err := db.Query("SELECT DISTINCT id FROM subscription WHERE (channel = $1 OR channel = \"\") AND (key = $2 OR key = \"\")", channel, key)
+	res, err := db.Query("SELECT DISTINCT instance_id FROM subscription WHERE (channel = $1 OR channel = \"\") AND (key = $2 OR key = \"\")", channel, key)
 	if err != nil {
 		panic(err)
 	}
@@ -28,14 +28,14 @@ func GetSubscriberUUIDs(channel, key string, db *sql.DB) []uuid.UUID {
 }
 
 func Subscribe(channel, key string, id uuid.UUID, db *sql.DB) {
-	_, err := db.Exec("INSERT INTO subscription (channel, key, id) VALUES ($1, $2, $3)", channel, key, id)
+	_, err := db.Exec("INSERT INTO subscription (channel, key, instance_id) VALUES ($1, $2, $3)", channel, key, id[:])
 	if err != nil {
 		panic(err)
 	}
 }
 
 func Unsubscribe(channel, key string, id uuid.UUID, db *sql.DB) {
-	_, err := db.Exec("DELETE FROM subscription WHERE channel = $1 AND key = $2 AND id = $3)", channel, key, id)
+	_, err := db.Exec("DELETE FROM subscription WHERE channel = $1 AND key = $2 AND id = $3)", channel, key, id[:])
 	if err != nil {
 		panic(err)
 	}

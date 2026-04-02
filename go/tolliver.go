@@ -39,7 +39,7 @@ type InstanceOptions struct {
 	// Interval to try resend messages after
 	RetryInterval time.Duration
 
-	Logger slog.Logger
+	Logger *slog.Logger
 }
 
 func NewInstance(opts *InstanceOptions) (*Instance, error) {
