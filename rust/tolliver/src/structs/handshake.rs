@@ -1,18 +1,25 @@
 use std::{
 	error::Error,
-	fmt::{self, Display},
+	fmt::{self},
 	io,
 };
 
-use crate::{error::TolliverError, HandshakeCodeType, VersionType, VERSION};
+use crate::{error::TolliverError, StatusCode};
 
-#[derive(Debug, PartialEq)]
-pub enum HandshakeCode {
-	Success,
-	GeneralError,
-	IncompatibleVersion(VersionType),
-	Unauthorised,
-	UnknowErrorCode(HandshakeCodeType),
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum HandshakeResponseCode {
+	Success = 0,
+	GeneralError = 1,
+	NewerVersionWithCompatibility = 2,
+	NewerVersionWithoutCompatibility = 3,
+	OlderVersion = 4, // Handshake final will determine if this succeeds
+}
+
+impl fmt::Display for HandshakeResponseCode {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		let num = *self as StatusCode;
+		write!(f, "{num}")
+	}
 }
 
 #[derive(Debug, PartialEq)]
@@ -22,66 +29,10 @@ pub enum HandshakeFinalCode {
 	IncompatibleVersion = 2,
 }
 
-impl Display for HandshakeCode {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			Self::Success => write!(f, "Success"),
-			Self::GeneralError => write!(f, "General error"),
-			Self::IncompatibleVersion(server_version) => {
-				write!(
-					f,
-					"Incompatible version. Client is {VERSION} while server is {server_version}"
-				)
-			}
-			Self::Unauthorised => write!(f, "Unauthorised"),
-			Self::UnknowErrorCode(code) => {
-				write!(f, "Unknown error code {code}")
-			}
-		}
-	}
-}
-
-impl HandshakeCode {
-	/// Constructs a HandshakeResultCode from the result code returned by the server.
-	/// # Examples
-	///
-	/// ```
-	/// use tolliver::structs::handshake::HandshakeCode;
-	/// let handshake_code = HandshakeCode::from_status_code(3, 0);
-	/// assert_eq!(handshake_code, HandshakeCode::Unauthorised);
-	/// ```
-	///
-	/// This can also be done with a specific version type:
-	///
-	/// ```
-	/// use tolliver::structs::handshake::HandshakeCode;
-	/// let handshake_code = HandshakeCode::from_status_code(2, 5);
-	/// assert_eq!(handshake_code, HandshakeCode::IncompatibleVersion(5));
-	/// ```
-	pub fn from_status_code(code: HandshakeCodeType, server_version: VersionType) -> Self {
-		match code {
-			1 => Self::GeneralError,
-			2 => Self::IncompatibleVersion(server_version),
-			3 => Self::Unauthorised,
-			code => Self::UnknowErrorCode(code),
-		}
-	}
-
-	pub fn status_code(&self) -> HandshakeCodeType {
-		match *self {
-			Self::Success => 0,
-			Self::GeneralError => 1,
-			Self::IncompatibleVersion(_) => 2,
-			Self::Unauthorised => 3,
-			Self::UnknowErrorCode(code) => code,
-		}
-	}
-}
-
 #[derive(Debug)]
 pub enum HandshakeError {
 	TolliverError(TolliverError),
-	Result(HandshakeCode),
+	Result(HandshakeResponseCode),
 }
 
 impl fmt::Display for HandshakeError {

@@ -1,5 +1,5 @@
 use std::{
-	io::{IoSlice, IoSliceMut, Read, Write},
+	io::{self, IoSlice, IoSliceMut, Read, Write},
 	net::{self, TcpStream},
 };
 
@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
 	error::TolliverError,
 	structs::{
-		handshake::{HandshakeCode, HandshakeError, HandshakeFinalCode},
+		handshake::{HandshakeError, HandshakeFinalCode},
 		tolliver_connection::TolliverConnection,
 	},
 	MessageType, MessageTypeNumber, StatusCode, VersionType, HANDSHAKE_CODE_LENGTH,
@@ -23,12 +23,12 @@ where
 
 	send_handshake_request(uuid, &mut stream)?;
 	// Pass some errors to handshake final
-	let remote_uuid = get_handshake_response(&mut stream)?;
-	send_handshake_final(&mut stream)?;
+	let (status_code, remote_uuid) = get_handshake_response(&mut stream)?;
+	send_handshake_final(&mut stream, status_code)?;
 	Ok(TolliverConnection::new(stream, remote_uuid)?)
 }
 
-fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> Result<(), HandshakeError> {
+fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> io::Result<()> {
 	let message_type = MessageType::HandshakeRequest as MessageTypeNumber;
 	let message_type_bytes = message_type.to_be_bytes();
 	debug_assert_eq!(message_type_bytes.len(), MESSAGE_TYPE_LENGTH);
@@ -47,7 +47,7 @@ fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> Result<(), Hand
 	Ok(())
 }
 
-fn get_handshake_response(stream: &mut TcpStream) -> Result<Uuid, HandshakeError> {
+fn get_handshake_response(stream: &mut TcpStream) -> Result<(StatusCode, Uuid), HandshakeError> {
 	let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
 	let message_type_io_slice = IoSliceMut::new(&mut message_type_buf);
 
@@ -75,22 +75,30 @@ fn get_handshake_response(stream: &mut TcpStream) -> Result<Uuid, HandshakeError
 		)));
 	}
 	let version = VersionType::from_be_bytes(version_buf);
+	let handshake_final_code = if version == VERSION {
+		HandshakeFinalCode::Success
+	} else {
+		HandshakeFinalCode::IncompatibleVersion
+	};
+	let status_code = handshake_final_code as StatusCode;
 	let uuid = Uuid::from_bytes(uuid_buf);
 
 	match handshake_code_buf {
-		[0] => Ok(uuid),
-		[code] => Err(HandshakeError::Result(HandshakeCode::from_status_code(
-			code, version,
+		[0] => Ok((status_code, uuid)),
+		[code] => Err(HandshakeError::TolliverError(TolliverError::TolliverError(
+			format!("Handshake failed, remote sent status code: {code}"),
 		))),
 	}
 }
 
-fn send_handshake_final(stream: &mut TcpStream) -> Result<(), HandshakeError> {
+fn send_handshake_final(
+	stream: &mut TcpStream,
+	status_code: StatusCode,
+) -> Result<(), HandshakeError> {
 	let message_type = MessageType::HandshakeFinal as MessageTypeNumber;
 	let message_type_bytes = message_type.to_be_bytes();
 	debug_assert_eq!(message_type_bytes.len(), MESSAGE_TYPE_LENGTH);
 
-	let status_code = HandshakeFinalCode::Success as StatusCode;
 	let status_code_bytes = status_code.to_be_bytes();
 	debug_assert_eq!(status_code_bytes.len(), STATUS_CODE_LENGTH);
 
