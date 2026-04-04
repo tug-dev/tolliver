@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS message (
 		let body_length: BodyLengthType =
 			match body.len().try_into() {
 				Ok(r) => r,
-				Err(_) => return Err(TolliverError::TolliverError(
+				Err(_) => return Err(TolliverError::Custom(
 					"Could not encode length into BodyLengthType, most likely object is too large"
 						.to_string(),
 				)),

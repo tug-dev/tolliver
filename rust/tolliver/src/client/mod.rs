@@ -7,15 +7,12 @@ use uuid::Uuid;
 
 use crate::{
 	error::TolliverError,
-	structs::{
-		handshake::{HandshakeError, HandshakeFinalCode},
-		tolliver_connection::TolliverConnection,
-	},
+	structs::{handshake::HandshakeFinalCode, tolliver_connection::TolliverConnection},
 	MessageType, MessageTypeNumber, StatusCode, VersionType, HANDSHAKE_CODE_LENGTH,
 	MESSAGE_TYPE_LENGTH, STATUS_CODE_LENGTH, UUID_LENGTH, VERSION, VERSION_LENGTH,
 };
 
-pub fn connect<A>(addr: A, uuid: Uuid) -> Result<TolliverConnection, HandshakeError>
+pub fn connect<A>(addr: A, uuid: Uuid) -> Result<TolliverConnection, TolliverError>
 where
 	A: net::ToSocketAddrs,
 {
@@ -47,7 +44,7 @@ fn send_handshake_request(uuid: Uuid, stream: &mut TcpStream) -> io::Result<()> 
 	Ok(())
 }
 
-fn get_handshake_response(stream: &mut TcpStream) -> Result<(StatusCode, Uuid), HandshakeError> {
+fn get_handshake_response(stream: &mut TcpStream) -> Result<(StatusCode, Uuid), TolliverError> {
 	let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
 	let message_type_io_slice = IoSliceMut::new(&mut message_type_buf);
 
@@ -70,9 +67,9 @@ fn get_handshake_response(stream: &mut TcpStream) -> Result<(StatusCode, Uuid), 
 	let handshake_response_number = MessageType::HandshakeResponse as MessageTypeNumber;
 	if message_type_num != handshake_response_number {
 		//TODO Simplify these errors
-		return Err(HandshakeError::TolliverError(TolliverError::TolliverError(
+		return Err(TolliverError::Custom(
 			"Remote did not reply to handshake request with handshake response".to_string(),
-		)));
+		));
 	}
 	let version = VersionType::from_be_bytes(version_buf);
 	let handshake_final_code = if version == VERSION {
@@ -85,16 +82,13 @@ fn get_handshake_response(stream: &mut TcpStream) -> Result<(StatusCode, Uuid), 
 
 	match handshake_code_buf {
 		[0] => Ok((status_code, uuid)),
-		[code] => Err(HandshakeError::TolliverError(TolliverError::TolliverError(
-			format!("Handshake failed, remote sent status code: {code}"),
+		[code] => Err(TolliverError::Custom(format!(
+			"Handshake failed, remote sent status code: {code}"
 		))),
 	}
 }
 
-fn send_handshake_final(
-	stream: &mut TcpStream,
-	status_code: StatusCode,
-) -> Result<(), HandshakeError> {
+fn send_handshake_final(stream: &mut TcpStream, status_code: StatusCode) -> io::Result<()> {
 	let message_type = MessageType::HandshakeFinal as MessageTypeNumber;
 	let message_type_bytes = message_type.to_be_bytes();
 	debug_assert_eq!(message_type_bytes.len(), MESSAGE_TYPE_LENGTH);

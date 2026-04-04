@@ -2,7 +2,7 @@ use std::{error::Error, fmt, io};
 
 #[derive(Debug)]
 pub enum TolliverError {
-	TolliverError(String),
+	Custom(String),
 	IOError(io::Error),
 	SqliteError(rusqlite::Error),
 }
@@ -10,7 +10,7 @@ pub enum TolliverError {
 impl fmt::Display for TolliverError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		match self {
-			TolliverError::TolliverError(e) => write!(f, "{}", e),
+			TolliverError::Custom(e) => write!(f, "{}", e),
 			TolliverError::IOError(e) => write!(f, "IO error: {}", e),
 			TolliverError::SqliteError(e) => write!(f, "SQLite eror: {}", e),
 		}
@@ -20,7 +20,7 @@ impl fmt::Display for TolliverError {
 impl Error for TolliverError {
 	fn source(&self) -> Option<&(dyn Error + 'static)> {
 		match self {
-			TolliverError::TolliverError(_) => None,
+			TolliverError::Custom(_) => None,
 			TolliverError::IOError(e) => Some(e),
 			TolliverError::SqliteError(e) => Some(e),
 		}

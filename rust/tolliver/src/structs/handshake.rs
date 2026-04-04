@@ -1,10 +1,6 @@
-use std::{
-	error::Error,
-	fmt::{self},
-	io,
-};
+use std::fmt::{self};
 
-use crate::{error::TolliverError, StatusCode};
+use crate::StatusCode;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum HandshakeResponseCode {
@@ -27,40 +23,4 @@ pub enum HandshakeFinalCode {
 	Success = 0,
 	GeneralError = 1,
 	IncompatibleVersion = 2,
-}
-
-#[derive(Debug)]
-pub enum HandshakeError {
-	TolliverError(TolliverError),
-	Result(HandshakeResponseCode),
-}
-
-impl fmt::Display for HandshakeError {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			HandshakeError::TolliverError(e) => write!(f, "{}", e),
-			HandshakeError::Result(code) => write!(f, "{}", code),
-		}
-	}
-}
-
-impl Error for HandshakeError {
-	fn source(&self) -> Option<&(dyn Error + 'static)> {
-		match self {
-			HandshakeError::TolliverError(e) => e.source(),
-			_ => None,
-		}
-	}
-}
-
-impl From<io::Error> for HandshakeError {
-	fn from(value: io::Error) -> Self {
-		HandshakeError::TolliverError(value.into())
-	}
-}
-
-impl From<TolliverError> for HandshakeError {
-	fn from(value: TolliverError) -> Self {
-		HandshakeError::TolliverError(value)
-	}
 }
