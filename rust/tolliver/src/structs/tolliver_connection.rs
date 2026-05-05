@@ -1,29 +1,37 @@
 use std::{
 	fmt::Debug,
-	io::{self, Read, Write},
+	io::{Read, Write},
 	net::TcpStream,
 };
 
 use prost::Message;
 use uuid::Uuid;
 
-use crate::error::TolliverError;
+use crate::{error::TolliverError, MessageType, MessageTypeNumber, MESSAGE_TYPE_LENGTH};
 
 use super::read_message::ReadMessage;
 
 pub type BodyLengthType = u16;
 pub type ProtoIdType = u64;
+pub type ChannelLengthType = u64;
+pub type KeyLengthType = u64;
 
 /// The number of bytes the body length is encoded in
 const BODY_LENGTH_LENGTH: usize = 2;
 /// The number of bytes the body length is encoded in
 const PROTO_ID_LENGTH: usize = 8;
+/// The number of bytes the channel length is encoded in
+const CHANNEL_LENGTH_LENGTH: usize = 8;
+/// The number of bytes the key length is encoded in
+const KEY_LENGTH_LENGTH: usize = 8;
 const DB_PATH: &str = "tolliver.db";
 
 /// Compile time assertions
 const _: () = {
 	assert!(BodyLengthType::BITS == BODY_LENGTH_LENGTH as u32 * 8);
 	assert!(ProtoIdType::BITS == PROTO_ID_LENGTH as u32 * 8);
+	assert!(ChannelLengthType::BITS == CHANNEL_LENGTH_LENGTH as u32 * 8);
+	assert!(KeyLengthType::BITS == KEY_LENGTH_LENGTH as u32 * 8);
 };
 
 pub struct TolliverConnection {
@@ -70,10 +78,30 @@ CREATE TABLE IF NOT EXISTS message (
 	///
 	/// This function will return an error only if there is a problem reading
 	/// bytes from the stream.
-	pub fn read(&mut self) -> io::Result<ReadMessage> {
-		let mut proto_id_buf = [0; PROTO_ID_LENGTH];
-		self.stream.read_exact(&mut proto_id_buf)?;
-		let proto_id = ProtoIdType::from_be_bytes(proto_id_buf);
+	pub fn read(&mut self) -> Result<ReadMessage, TolliverError> {
+		let mut message_type_buf = [0; MESSAGE_TYPE_LENGTH];
+		self.stream.read_exact(&mut message_type_buf)?;
+		let message_type_num: MessageTypeNumber = message_type_buf[0];
+		let regular_message_num = MessageType::RegularMessage as MessageTypeNumber;
+		if message_type_num != regular_message_num {
+			return Err(TolliverError::Custom(
+				"Did not receive regular message".to_string(),
+			));
+		}
+
+		let mut channel_length_buf = [0; CHANNEL_LENGTH_LENGTH];
+		self.stream.read_exact(&mut channel_length_buf)?;
+		let channel_length = ChannelLengthType::from_be_bytes(channel_length_buf);
+
+		let mut channel_buf = vec![0; channel_length.try_into().unwrap()];
+		self.stream.read_exact(&mut channel_buf)?;
+
+		let mut key_length_buf = [0; KEY_LENGTH_LENGTH];
+		self.stream.read_exact(&mut key_length_buf)?;
+		let key_length = KeyLengthType::from_be_bytes(key_length_buf);
+
+		let mut key_buf = vec![0; key_length.try_into().unwrap()];
+		self.stream.read_exact(&mut key_buf)?;
 
 		let mut body_length_buf = [0; BODY_LENGTH_LENGTH];
 		self.stream.read_exact(&mut body_length_buf)?;
@@ -83,7 +111,8 @@ CREATE TABLE IF NOT EXISTS message (
 		self.stream.read_exact(&mut body_buf)?;
 
 		let message = ReadMessage {
-			proto_id,
+			channel: String::from_utf8(channel_buf)?.into_boxed_str(),
+			key: String::from_utf8(key_buf)?.into_boxed_str(),
 			body: body_buf,
 		};
 		Ok(message)
@@ -93,19 +122,21 @@ CREATE TABLE IF NOT EXISTS message (
 	/// return as early as possible when it fails so something else can be tried.
 	pub fn unreliable_send(
 		&mut self,
-		proto_id: ProtoIdType,
+		channel: &str,
+		key: &str,
 		object: &impl Message,
 	) -> Result<(), TolliverError> {
 		let body_bytes = Self::message_to_bytes(object);
-		self.unreliable_send_bytes(proto_id, body_bytes)
+		self.unreliable_send_bytes(channel, key, body_bytes)
 	}
 
 	pub fn unreliable_send_bytes(
 		&mut self,
-		proto_id: ProtoIdType,
+		channel: &str,
+		key: &str,
 		bytes: Vec<u8>,
 	) -> Result<(), TolliverError> {
-		let message = Self::body_to_tolliver_message(proto_id, bytes)?;
+		let message = Self::body_to_tolliver_message(channel, key, bytes)?;
 		self.stream.write_all(&message)?;
 		Ok(())
 	}
@@ -114,20 +145,22 @@ CREATE TABLE IF NOT EXISTS message (
 	/// been written to disk and is guaranteed to be delivered at some point.
 	pub fn send(
 		&mut self,
-		proto_id: ProtoIdType,
+		channel: &str,
+		key: &str,
 		object: &impl Message,
 	) -> Result<(), TolliverError> {
 		let body_bytes = Self::message_to_bytes(object);
-		self.send_bytes(proto_id, body_bytes)
+		self.send_bytes(channel, key, body_bytes)
 	}
 
 	pub fn send_bytes(
 		&mut self,
-		proto_id: ProtoIdType,
+		channel: &str,
+		key: &str,
 		bytes: Vec<u8>,
 	) -> Result<(), TolliverError> {
 		let peer = self.stream.peer_addr()?;
-		let message_bytes = Self::body_to_tolliver_message(proto_id, bytes)?;
+		let message_bytes = Self::body_to_tolliver_message(channel, key, bytes)?;
 		let id = self.save_to_disk(peer.to_string(), &message_bytes)?;
 		let unsent_message = UnsentMessage {
 			id,
@@ -144,30 +177,41 @@ CREATE TABLE IF NOT EXISTS message (
 	///
 	/// For details, see the Tolliver protocol documentation.
 	fn body_to_tolliver_message(
-		proto_id: ProtoIdType,
+		channel: &str,
+		key: &str,
 		body: Vec<u8>,
 	) -> Result<Vec<u8>, TolliverError> {
-		// This length check can be done before encoding the ProtoBuf but we also
-		// need to check the length if the *_bytes functions are used. The only
-		// benefit of doing it before would be for it to return an error slightly
-		// faster in the failing case but that would only happen if the ProtoBuf
-		// was ~4.254 x 10^22 petabytes so very rarely, if ever, triggered.
-		let body_length: BodyLengthType =
-			match body.len().try_into() {
-				Ok(r) => r,
-				Err(_) => return Err(TolliverError::Custom(
-					"Could not encode length into BodyLengthType, most likely object is too large"
-						.to_string(),
-				)),
-			};
+		let channel_length: ChannelLengthType = match channel.len().try_into() {
+			Ok(r) => r,
+			Err(_) => return Err(TolliverError::Custom("Channel string too long".to_string())),
+		};
+		let key_length: KeyLengthType = match key.len().try_into() {
+			Ok(r) => r,
+			Err(_) => return Err(TolliverError::Custom("Key string too long".to_string())),
+		};
+		let body_length: BodyLengthType = match body.len().try_into() {
+			Ok(r) => r,
+			Err(_) => return Err(TolliverError::Custom("Object too large".to_string())),
+		};
 
-		let total_length = PROTO_ID_LENGTH + BODY_LENGTH_LENGTH + body_length as usize;
+		let total_length = MESSAGE_TYPE_LENGTH
+			+ CHANNEL_LENGTH_LENGTH
+			+ channel_length as usize
+			+ KEY_LENGTH_LENGTH
+			+ key_length as usize
+			+ BODY_LENGTH_LENGTH
+			+ body_length as usize;
 		let mut buf = Vec::with_capacity(total_length);
 
-		buf.extend(proto_id.to_be_bytes());
+		let message_type = MessageType::RegularMessage as MessageTypeNumber;
+		buf.extend(message_type.to_be_bytes());
+		buf.extend(channel_length.to_be_bytes());
+		buf.extend(channel.as_bytes());
+		buf.extend(key_length.to_be_bytes());
+		buf.extend(key.as_bytes());
 		buf.extend(body_length.to_be_bytes());
-
 		buf.extend(body);
+		debug_assert_eq!(buf.len(), total_length);
 		Ok(buf)
 	}
 

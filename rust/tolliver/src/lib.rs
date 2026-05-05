@@ -26,6 +26,7 @@ pub enum MessageType {
 	HandshakeRequest = 0,
 	HandshakeResponse = 1,
 	HandshakeFinal = 2,
+	RegularMessage = 3,
 }
 
 /// The general status code type.
@@ -43,12 +44,12 @@ mod tests {
 	use std::thread;
 
 	use server::TolliverServer;
-	use structs::tolliver_connection::ProtoIdType;
 	use uuid::Uuid;
 
 	use super::*;
 
-	const EXAMPLE_PROTO_ID: ProtoIdType = 0;
+	const EXAMPLE_CHANNEL_NAME: &str = "test_channel";
+	const EXAMPLE_KEY: &str = "test_key";
 
 	#[test]
 	fn start_server() {
@@ -76,7 +77,8 @@ mod tests {
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, Uuid::nil()).unwrap();
-			conn.unreliable_send(EXAMPLE_PROTO_ID, &shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &shirt)
+				.unwrap();
 		});
 		for mut connection in incoming {
 			assert_eq!(expected_shirt, connection.read().unwrap().read().unwrap());
@@ -102,11 +104,16 @@ mod tests {
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, Uuid::nil()).unwrap();
-			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
-			conn.unreliable_send(EXAMPLE_PROTO_ID, &blue_shirt).unwrap();
-			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
-			conn.unreliable_send(EXAMPLE_PROTO_ID, &red_shirt).unwrap();
-			conn.unreliable_send(EXAMPLE_PROTO_ID, &blue_shirt).unwrap();
+			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &red_shirt)
+				.unwrap();
+			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &blue_shirt)
+				.unwrap();
+			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &red_shirt)
+				.unwrap();
+			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &red_shirt)
+				.unwrap();
+			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &blue_shirt)
+				.unwrap();
 		});
 		for mut connection in incoming {
 			assert_eq!(

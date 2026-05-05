@@ -39,6 +39,9 @@ pub fn handle_receive(function: Function, connection: &mut TolliverConnection) {
 		}
 	};
 	let output = protobuf::text_format::print_to_string(&*message);
-	println!("Proto ID: {}", read_message.proto_id);
+	println!(
+		"Channel-key pair: {}:{}",
+		read_message.channel, read_message.key
+	);
 	println!("{output}");
 }

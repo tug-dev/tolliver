@@ -2,11 +2,10 @@ use std::fmt::Debug;
 
 use prost::{DecodeError, Message};
 
-use super::tolliver_connection::ProtoIdType;
-
 #[derive(Debug)]
 pub struct ReadMessage {
-	pub proto_id: ProtoIdType,
+	pub channel: Box<str>,
+	pub key: Box<str>,
 	pub body: Vec<u8>,
 }
 
