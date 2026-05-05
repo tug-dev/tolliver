@@ -12,15 +12,15 @@ use crate::{error::TolliverError, MessageType, MessageTypeNumber, MESSAGE_TYPE_L
 use super::read_message::ReadMessage;
 
 pub type BodyLengthType = u16;
-pub type ChannelLengthType = u64;
-pub type KeyLengthType = u64;
+pub type ChannelLengthType = u16;
+pub type KeyLengthType = u16;
 
 /// The number of bytes the body length is encoded in
 const BODY_LENGTH_LENGTH: usize = 2;
 /// The number of bytes the channel length is encoded in
-const CHANNEL_LENGTH_LENGTH: usize = 8;
+const CHANNEL_LENGTH_LENGTH: usize = 2;
 /// The number of bytes the key length is encoded in
-const KEY_LENGTH_LENGTH: usize = 8;
+const KEY_LENGTH_LENGTH: usize = 2;
 const DB_PATH: &str = "tolliver.db";
 
 /// Compile time assertions
@@ -89,21 +89,21 @@ CREATE TABLE IF NOT EXISTS message (
 		self.stream.read_exact(&mut channel_length_buf)?;
 		let channel_length = ChannelLengthType::from_be_bytes(channel_length_buf);
 
-		let mut channel_buf = vec![0; channel_length.try_into().unwrap()];
+		let mut channel_buf = vec![0; channel_length as usize];
 		self.stream.read_exact(&mut channel_buf)?;
 
 		let mut key_length_buf = [0; KEY_LENGTH_LENGTH];
 		self.stream.read_exact(&mut key_length_buf)?;
 		let key_length = KeyLengthType::from_be_bytes(key_length_buf);
 
-		let mut key_buf = vec![0; key_length.try_into().unwrap()];
+		let mut key_buf = vec![0; key_length as usize];
 		self.stream.read_exact(&mut key_buf)?;
 
 		let mut body_length_buf = [0; BODY_LENGTH_LENGTH];
 		self.stream.read_exact(&mut body_length_buf)?;
 		let body_length = BodyLengthType::from_be_bytes(body_length_buf);
 
-		let mut body_buf = vec![0; body_length.into()];
+		let mut body_buf = vec![0; body_length as usize];
 		self.stream.read_exact(&mut body_buf)?;
 
 		let message = ReadMessage {

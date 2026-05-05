@@ -55,9 +55,9 @@ Although there is no reason for the handshake to be sent again on an existing co
 ```
 1 byte - message type, for a regular message this is 3
 8 bytes - big endian u64 of local message id (taken from the database, should be set as 0 for an unreliable message)
-8 bytes - big endian u64 of the number of bytes the channel string is
+2 bytes - big endian u16 of the number of bytes the channel string is
 Number of bytes specified - UTF-8 encoded channel name
-8 bytes - big endian u64 of the number of bytes the key string is
+2 bytes - big endian u16 of the number of bytes the key string is
 Number of bytes specified - UTF-8 encoded key name
 8 bytes - big endian u64 of the number of bytes the body is
 Number of bytes specified - Message body
