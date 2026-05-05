@@ -12,14 +12,11 @@ use crate::{error::TolliverError, MessageType, MessageTypeNumber, MESSAGE_TYPE_L
 use super::read_message::ReadMessage;
 
 pub type BodyLengthType = u16;
-pub type ProtoIdType = u64;
 pub type ChannelLengthType = u64;
 pub type KeyLengthType = u64;
 
 /// The number of bytes the body length is encoded in
 const BODY_LENGTH_LENGTH: usize = 2;
-/// The number of bytes the body length is encoded in
-const PROTO_ID_LENGTH: usize = 8;
 /// The number of bytes the channel length is encoded in
 const CHANNEL_LENGTH_LENGTH: usize = 8;
 /// The number of bytes the key length is encoded in
@@ -29,7 +26,6 @@ const DB_PATH: &str = "tolliver.db";
 /// Compile time assertions
 const _: () = {
 	assert!(BodyLengthType::BITS == BODY_LENGTH_LENGTH as u32 * 8);
-	assert!(ProtoIdType::BITS == PROTO_ID_LENGTH as u32 * 8);
 	assert!(ChannelLengthType::BITS == CHANNEL_LENGTH_LENGTH as u32 * 8);
 	assert!(KeyLengthType::BITS == KEY_LENGTH_LENGTH as u32 * 8);
 };
