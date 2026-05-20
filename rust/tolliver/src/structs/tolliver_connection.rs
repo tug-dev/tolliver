@@ -7,7 +7,10 @@ use std::{
 use prost::Message;
 use uuid::Uuid;
 
-use crate::{error::TolliverError, MessageType, MessageTypeNumber, MESSAGE_TYPE_LENGTH};
+use crate::{
+	error::TolliverError, MessageIdNumber, MessageType, MessageTypeNumber, MESSAGE_ID_LENGTH,
+	MESSAGE_TYPE_LENGTH,
+};
 
 use super::read_message::ReadMessage;
 
@@ -22,6 +25,7 @@ const CHANNEL_LENGTH_LENGTH: usize = 2;
 /// The number of bytes the key length is encoded in
 const KEY_LENGTH_LENGTH: usize = 2;
 const DB_PATH: &str = "tolliver.db";
+const UNRELIABLE_MESSAGE_ID: MessageIdNumber = 0;
 
 /// Compile time assertions
 const _: () = {
@@ -85,6 +89,13 @@ CREATE TABLE IF NOT EXISTS message (
 			));
 		}
 
+		let mut message_id_buf = [0; MESSAGE_ID_LENGTH];
+		self.stream.read_exact(&mut message_id_buf)?;
+		let message_id = MessageIdNumber::from_be_bytes(message_id_buf);
+		if message_id != 0 {
+			//TODO Send confirmation
+		}
+
 		let mut channel_length_buf = [0; CHANNEL_LENGTH_LENGTH];
 		self.stream.read_exact(&mut channel_length_buf)?;
 		let channel_length = ChannelLengthType::from_be_bytes(channel_length_buf);
@@ -132,8 +143,16 @@ CREATE TABLE IF NOT EXISTS message (
 		key: &str,
 		bytes: Vec<u8>,
 	) -> Result<(), TolliverError> {
+		let buf_len = MESSAGE_TYPE_LENGTH + MESSAGE_ID_LENGTH;
+		let mut buf = Vec::with_capacity(buf_len);
+
+		let message_type = MessageType::RegularMessage as MessageTypeNumber;
+		buf.extend(message_type.to_be_bytes());
+		buf.extend(UNRELIABLE_MESSAGE_ID.to_be_bytes());
 		let message = Self::body_to_tolliver_message(channel, key, bytes)?;
-		self.stream.write_all(&message)?;
+		buf.extend(message);
+
+		self.stream.write_all(&buf)?;
 		Ok(())
 	}
 
@@ -190,8 +209,7 @@ CREATE TABLE IF NOT EXISTS message (
 			Err(_) => return Err(TolliverError::Custom("Object too large".to_string())),
 		};
 
-		let total_length = MESSAGE_TYPE_LENGTH
-			+ CHANNEL_LENGTH_LENGTH
+		let total_length = CHANNEL_LENGTH_LENGTH
 			+ channel_length as usize
 			+ KEY_LENGTH_LENGTH
 			+ key_length as usize
@@ -199,8 +217,6 @@ CREATE TABLE IF NOT EXISTS message (
 			+ body_length as usize;
 		let mut buf = Vec::with_capacity(total_length);
 
-		let message_type = MessageType::RegularMessage as MessageTypeNumber;
-		buf.extend(message_type.to_be_bytes());
 		buf.extend(channel_length.to_be_bytes());
 		buf.extend(channel.as_bytes());
 		buf.extend(key_length.to_be_bytes());
@@ -219,7 +235,13 @@ CREATE TABLE IF NOT EXISTS message (
 	}
 
 	fn complete_send(&mut self, message: UnsentMessage) -> Result<(), TolliverError> {
-		self.stream.write_all(&message.message_bytes)?;
+		let buf_size = MESSAGE_TYPE_LENGTH + MESSAGE_ID_LENGTH + message.message_bytes.len();
+		let mut buf = Vec::with_capacity(buf_size);
+		let message_type = MessageType::RegularMessage as MessageTypeNumber;
+		// TODO Create a full regular-message frame
+		buf.extend(message_type.to_be_bytes());
+		buf.extend(message.id.to_be_bytes());
+		self.stream.write_all(&buf)?;
 		self.delete_from_disk(message.id)?;
 		Ok(())
 	}
@@ -267,7 +289,7 @@ CREATE TABLE IF NOT EXISTS message (
 /// This represents a message that has been saved to disk and not yet sent.
 #[derive(Debug, PartialEq)]
 struct UnsentMessage {
-	id: i32,
+	id: MessageIdNumber,
 	peer: String,
 	message_bytes: Vec<u8>,
 }

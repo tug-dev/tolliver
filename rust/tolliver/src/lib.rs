@@ -10,6 +10,7 @@ type VersionType = u64;
 /// should correspond with the number of bytes in SERVER_RESPONSE_CODE_LENGTH.
 pub type HandshakeCodeType = u8;
 pub type MessageTypeNumber = u8;
+pub type MessageIdNumber = i32;
 
 /// The version of the protocol
 const VERSION: VersionType = 1;
@@ -21,6 +22,8 @@ const UUID_LENGTH: usize = 16;
 const HANDSHAKE_CODE_LENGTH: usize = 1;
 /// The number of bytes the message type is encoded in
 const MESSAGE_TYPE_LENGTH: usize = 1;
+/// The number of bytes the message id is encoded in
+const MESSAGE_ID_LENGTH: usize = 4;
 /// The type of message that is being sent
 pub enum MessageType {
 	HandshakeRequest = 0,
@@ -33,6 +36,14 @@ pub enum MessageType {
 pub type StatusCode = u8;
 /// The number of bytes a [StatusCode] is encoded in.
 const STATUS_CODE_LENGTH: usize = 1;
+
+/// Compile time assertions
+const _: () = {
+	assert!(VersionType::BITS == VERSION_LENGTH as u32 * 8);
+	assert!(HandshakeCodeType::BITS == HANDSHAKE_CODE_LENGTH as u32 * 8);
+	assert!(MessageTypeNumber::BITS == MESSAGE_TYPE_LENGTH as u32 * 8);
+	assert!(MessageIdNumber::BITS == MESSAGE_ID_LENGTH as u32 * 8);
+};
 
 #[cfg(test)]
 mod tests {
