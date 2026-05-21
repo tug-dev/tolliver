@@ -88,6 +88,28 @@ mod tests {
 		let address = server.listener.local_addr().unwrap();
 		thread::spawn(move || {
 			let mut conn = client::connect(address, Uuid::nil()).unwrap();
+			conn.send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &shirt)
+				.unwrap();
+		});
+		for mut connection in incoming {
+			assert_eq!(expected_shirt, connection.read().unwrap().read().unwrap());
+			return;
+		}
+		panic!("Incoming somehow ended")
+	}
+
+	#[test]
+	fn one_send_unreliable() {
+		let mut shirt = items::Shirt::default();
+		shirt.color = "Red".to_string();
+		shirt.set_size(items::shirt::Size::Large);
+		let expected_shirt = shirt.clone();
+
+		let server = TolliverServer::bind(Uuid::max()).unwrap();
+		let incoming = server.run();
+		let address = server.listener.local_addr().unwrap();
+		thread::spawn(move || {
+			let mut conn = client::connect(address, Uuid::nil()).unwrap();
 			conn.unreliable_send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &shirt)
 				.unwrap();
 		});
@@ -100,6 +122,60 @@ mod tests {
 
 	#[test]
 	fn multi_send() {
+		let mut red_shirt = items::Shirt::default();
+		red_shirt.color = "Red".to_string();
+		red_shirt.set_size(items::shirt::Size::Large);
+		let expected_red_shirt = red_shirt.clone();
+
+		let mut blue_shirt = items::Shirt::default();
+		blue_shirt.color = "Blue".to_string();
+		blue_shirt.set_size(items::shirt::Size::Medium);
+		let expected_blue_shirt = blue_shirt.clone();
+
+		let server = TolliverServer::bind(Uuid::max()).unwrap();
+		let incoming = server.run();
+		let address = server.listener.local_addr().unwrap();
+		thread::spawn(move || {
+			let mut conn = client::connect(address, Uuid::nil()).unwrap();
+			conn.send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &red_shirt)
+				.unwrap();
+			conn.send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &blue_shirt)
+				.unwrap();
+			conn.send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &red_shirt)
+				.unwrap();
+			conn.send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &red_shirt)
+				.unwrap();
+			conn.send(EXAMPLE_CHANNEL_NAME, EXAMPLE_KEY, &blue_shirt)
+				.unwrap();
+		});
+		for mut connection in incoming {
+			assert_eq!(
+				expected_red_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_blue_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_red_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_red_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			assert_eq!(
+				expected_blue_shirt,
+				connection.read().unwrap().read().unwrap()
+			);
+			return;
+		}
+		panic!("Incoming somehow ended")
+	}
+
+	#[test]
+	fn multi_send_unreliable() {
 		let mut red_shirt = items::Shirt::default();
 		red_shirt.color = "Red".to_string();
 		red_shirt.set_size(items::shirt::Size::Large);

@@ -238,9 +238,9 @@ CREATE TABLE IF NOT EXISTS message (
 		let buf_size = MESSAGE_TYPE_LENGTH + MESSAGE_ID_LENGTH + message.message_bytes.len();
 		let mut buf = Vec::with_capacity(buf_size);
 		let message_type = MessageType::RegularMessage as MessageTypeNumber;
-		// TODO Create a full regular-message frame
 		buf.extend(message_type.to_be_bytes());
 		buf.extend(message.id.to_be_bytes());
+		buf.extend(message.message_bytes);
 		self.stream.write_all(&buf)?;
 		self.delete_from_disk(message.id)?;
 		Ok(())
