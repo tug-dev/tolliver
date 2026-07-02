@@ -11,7 +11,6 @@ import (
 	"os"
 	"slices"
 	"testing"
-	"time"
 
 	tolliver "github.com/tug-dev/tolliver/go"
 )
@@ -108,10 +107,5 @@ func TestHandshake(t *testing.T) {
 		return true
 	})
 	i2.Subscribe("test", "key")
-
-	time.Sleep(time.Second)
-
 	i1.Send("test", "key", []byte{8, 8, 8, 8})
-
-	time.Sleep(time.Second)
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"sync"
@@ -87,11 +88,16 @@ func (inst *Instance) newConnection(addr RemoteAddr) {
 		}
 		inst.l.RUnlock()
 
+		inst.l.Lock()
 		for _, s := range remSubs {
 			db.Subscribe(s.Channel, s.Key, remId, inst.db)
 		}
+		inst.l.Unlock()
 
 		inst.l.Lock()
+		if conn == nil {
+			println("Nil on new")
+		}
 		inst.conns[remId] = conn
 		inst.l.Unlock()
 		go inst.handleConn(binary.NewReader(conn), conn, remId)
@@ -173,7 +179,9 @@ func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
 func (inst *Instance) retry(interval time.Duration) {
 	for {
 		time.Sleep(interval)
+		inst.l.Lock()
 		notAcked := db.GetWork(inst.db)
+		inst.l.Unlock()
 
 		inst.l.RLock()
 		for _, v := range notAcked {
@@ -211,6 +219,9 @@ func (inst *Instance) awaitHandshake(conn net.Conn) {
 
 	for _, s := range remSubs {
 		db.Subscribe(s.Channel, s.Key, remId, inst.db)
+	}
+	if conn == nil {
+		println("Nil on receive")
 	}
 	inst.conns[remId] = conn
 
@@ -253,7 +264,9 @@ func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
 		return
 	}
 
+	inst.l.Lock()
 	db.Ack(mesId, id, inst.db)
+	inst.l.Unlock()
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
@@ -305,6 +318,9 @@ func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id 
 	// 0 is the message ID for unreliable messages
 	if mesId != 0 && shouldAck {
 		ack := buildAck(AckSuccess, mesId)
+		if conn == nil {
+			fmt.Printf("In ack: % x\n", ack)
+		}
 		connections.SendBytes(ack, conn)
 	}
 }
@@ -335,10 +351,14 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 
 	for _, entry := range entries {
 		if code == 0 {
+			inst.l.Lock()
 			db.Subscribe(entry.Channel, entry.Key, id, inst.db)
+			inst.l.Unlock()
 		}
 		if code == 1 {
+			inst.l.Lock()
 			db.Unsubscribe(entry.Channel, entry.Key, id, inst.db)
+			inst.l.Unlock()
 		}
 	}
 }
@@ -364,9 +384,15 @@ func buildMes(body []byte, id uint64, channel, key string) []byte {
 // TODO: Not exactly sure how an iterator would fit in here
 func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UUID) {
 	conns := make([]net.Conn, 0, len(inst.conns))
+	inst.l.Lock()
 	ids := db.GetSubscriberUUIDs(channel, key, inst.db)
+	inst.l.Unlock()
 
 	for _, v := range ids {
+		if inst.conns[v] == nil {
+			fmt.Printf("UUID of nil conn : % s\n", v)
+		}
+
 		conns = append(conns, inst.conns[v])
 	}
 
@@ -379,11 +405,16 @@ func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 	// This represents an unreliable message
 	id := uint64(0)
 	if reliable {
+		inst.l.Lock()
 		id = db.SaveMessage(body, recipientIds, channel, key, inst.db)
+		inst.l.Unlock()
 	}
 	mes := buildMes(body, id, channel, key)
 
 	for _, v := range recipientConns {
+		if v == nil {
+			fmt.Printf("In send: % x \n", mes)
+		}
 		connections.SendBytes(mes, v)
 	}
 }

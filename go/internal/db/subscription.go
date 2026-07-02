@@ -28,6 +28,7 @@ func GetSubscriberUUIDs(channel, key string, db *sql.DB) []uuid.UUID {
 }
 
 func Subscribe(channel, key string, id uuid.UUID, db *sql.DB) {
+	Unsubscribe(channel, key, id, db)
 	_, err := db.Exec("INSERT INTO subscription (channel, key, instance_id) VALUES ($1, $2, $3)", channel, key, id[:])
 	if err != nil {
 		panic(err)
@@ -35,7 +36,7 @@ func Subscribe(channel, key string, id uuid.UUID, db *sql.DB) {
 }
 
 func Unsubscribe(channel, key string, id uuid.UUID, db *sql.DB) {
-	_, err := db.Exec("DELETE FROM subscription WHERE channel = $1 AND key = $2 AND id = $3)", channel, key, id[:])
+	_, err := db.Exec("DELETE FROM subscription WHERE channel = $1 AND key = $2 AND id = $3", channel, key, id[:])
 	if err != nil {
 		panic(err)
 	}
