@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"errors"
+	"log"
 	"log/slog"
 	"net"
 	"strconv"
@@ -33,7 +34,7 @@ type InstanceOptions struct {
 	// Interface to listen on (e.g. 127.0.0.1, 0.0.0.0)
 	Interface string
 
-	// Port to listen on. If 0, a server will not be started and the interface will act purely as a client.
+	// Port to listen on. If 0, will be an OS assigned port.
 	Port uint16
 
 	// Interval to try resend messages after
@@ -54,19 +55,26 @@ func NewInstance(opts *InstanceOptions) (*Instance, error) {
 		logger:    opts.Logger,
 	}
 
+	i.logger.Info("Instance created")
+
 	database, err := sql.Open("sqlite", opts.DatabasePath)
 	if err != nil {
 		return &Instance{}, err
 	}
 
+	i.logger.Info("Database connection made")
+
 	i.id = db.Init(database)
 	i.db = database
+
+	i.logger.Info("Database initialized")
 
 	i.conns = make(map[uuid.UUID]net.Conn)
 	go i.retry(opts.RetryInterval)
 
-	if opts.Port != 0 {
-		i.listenOn(opts.Interface + ":" + strconv.Itoa(int(opts.Port)))
+	err = i.listenOn(opts.Interface + ":" + strconv.Itoa(int(opts.Port)))
+	if err != nil {
+		log.Fatal("Could not start listener: " + err.Error())
 	}
 
 	for _, r := range opts.Remotes {

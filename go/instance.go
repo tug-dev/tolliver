@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -29,6 +30,7 @@ type Instance struct {
 	db        *sql.DB
 	l         sync.RWMutex
 	logger    *slog.Logger
+	Port      int
 }
 
 type DialError struct {
@@ -84,20 +86,21 @@ func (inst *Instance) newConnection(addr RemoteAddr) {
 
 		inst.l.RLock()
 		if inst.conns[remId] != nil {
+			inst.logger.Warn("Connection already existed to node with id " + remId.String())
 			return
 		}
 		inst.l.RUnlock()
 
+		inst.logger.Info("Connection established to " + addr.String() + " to node with id " + remId.String())
+
 		inst.l.Lock()
 		for _, s := range remSubs {
 			db.Subscribe(s.Channel, s.Key, remId, inst.db)
+			inst.logger.Info("subscription on " + s.Channel + ":" + s.Key + " recorded for " + remId.String())
 		}
 		inst.l.Unlock()
 
 		inst.l.Lock()
-		if conn == nil {
-			println("Nil on new")
-		}
 		inst.conns[remId] = conn
 		inst.l.Unlock()
 		go inst.handleConn(binary.NewReader(conn), conn, remId)
@@ -116,6 +119,7 @@ func (inst *Instance) Subscribe(channel, key string) {
 		panic("The tolliver channel is reserved for protocol messages")
 	}
 
+	inst.logger.Info("Subscribing to " + channel + ":" + key)
 	inst.subs = append(inst.subs, common.SubcriptionInfo{Channel: channel, Key: key})
 	inst.send(buildSub(channel, key), ReservedTolliverChannel, "", true)
 }
@@ -130,6 +134,8 @@ func (inst *Instance) Unsubscribe(channel, key string) {
 		panic("Cannot unsubscribe from the reserved tolliver channel")
 	}
 
+	inst.logger.Info("Unsubscribing from " + channel + ":" + key)
+
 	idx := -1
 	for i, v := range inst.subs {
 		if v.Channel == channel && v.Key == key {
@@ -141,6 +147,8 @@ func (inst *Instance) Unsubscribe(channel, key string) {
 	if idx != -1 {
 		inst.subs[idx] = inst.subs[len(inst.subs)-1]
 		inst.subs = inst.subs[:len(inst.subs)-1]
+	} else {
+		inst.logger.Warn("Tried to unsubscribe from a channel-key pair which was not currently subscribed to")
 	}
 
 	inst.send(buildUnSub(channel, key), ReservedTolliverChannel, "", true)
@@ -162,16 +170,19 @@ func (inst *Instance) Register(channel, key string, cb func([]byte) bool) {
 	}
 
 	inst.callbacks[w] = append(inst.callbacks[w], cb)
+	inst.logger.Info("Callback registered on " + channel + ":" + key)
 }
 
 // Sends a message to all instances which are currently connected and subscribed on the channel key pair. Saves the message and
 // required metadata to ensure eventual delivery.
 func (inst *Instance) Send(channel, key string, mes []byte) {
+	inst.logger.Info("Sending message (length " + strconv.Itoa(len(mes)) + ") to " + channel + ":" + key)
 	inst.send(mes, channel, key, true)
 }
 
 // Attempts once to send a message to all connected instances subscribed to the key channel pair.
 func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
+	inst.logger.Info("Unreliably sending message (length " + strconv.Itoa(len(mes)) + ") to " + channel + ":" + key)
 	inst.send(mes, channel, key, false)
 }
 
@@ -179,6 +190,7 @@ func (inst *Instance) UnreliableSend(channel, key string, mes []byte) {
 func (inst *Instance) retry(interval time.Duration) {
 	for {
 		time.Sleep(interval)
+		inst.logger.Info("Attempting to resend undelivered messages")
 		inst.l.Lock()
 		notAcked := db.GetWork(inst.db)
 		inst.l.Unlock()
@@ -199,6 +211,12 @@ func (inst *Instance) listenOn(laddr string) error {
 	if err != nil {
 		return err
 	}
+	addr := lst.Addr()
+	if tcpAddr, ok := addr.(*net.TCPAddr); ok {
+		inst.Port = tcpAddr.Port
+	}
+
+	inst.logger.Info("Started listening on port " + strconv.Itoa(inst.Port))
 
 	go connections.HandleListener(lst, inst.awaitHandshake)
 
@@ -208,20 +226,21 @@ func (inst *Instance) listenOn(laddr string) error {
 func (inst *Instance) awaitHandshake(conn net.Conn) {
 	remId, remSubs, err := handshake.AwaitHandshake(conn, inst.id, inst.subs)
 	if err != nil {
+		inst.logger.Error("Error while awaiting handshake: " + err.Error())
 		return
 	}
 
 	// TODO: How do we want to handle this. Could overwrite existing conn / have slice of conns and send to all. (Same issue as when creating connection)
 	inst.l.Lock()
 	if inst.conns[remId] != nil {
+		inst.logger.Warn("Incoming handshake with already present UUID: " + remId.String())
 		return
 	}
 
+	inst.logger.Info("Connection established to node with id " + remId.String())
 	for _, s := range remSubs {
+		inst.logger.Info("Subscription recorded for " + s.Channel + ":" + s.Key + " from " + remId.String())
 		db.Subscribe(s.Channel, s.Key, remId, inst.db)
-	}
-	if conn == nil {
-		println("Nil on receive")
 	}
 	inst.conns[remId] = conn
 
@@ -233,6 +252,7 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 	for {
 		mesType, err := r.ReadByte()
 		if err != nil {
+			inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 			continue
 		}
 
@@ -258,44 +278,54 @@ func (inst *Instance) proccessAck(r *binary.Reader, id uuid.UUID) {
 	var mesId uint64
 	err := r.ReadAll(nil, &status, &mesId)
 	if err != nil {
+		inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 		return
 	}
 	if status != AckSuccess || mesId == 0 {
+		inst.logger.Warn("Bad message format from " + id.String())
 		return
 	}
 
 	inst.l.Lock()
 	db.Ack(mesId, id, inst.db)
 	inst.l.Unlock()
+	inst.logger.Info("Message " + strconv.Itoa(int(mesId)) + " acknowledged by " + id.String())
 }
 
 func (inst *Instance) processRegularMessage(r *binary.Reader, conn net.Conn, id uuid.UUID) {
 	var mesId, chanLen uint64
 	err := r.ReadAll(nil, &mesId, &chanLen)
 	if err != nil {
+		inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 		return
 	}
 	channel, err := r.ReadString(chanLen)
 	if err != nil {
+		inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 		return
 	}
 	keyLen, err := r.ReadUint64()
 	if err != nil {
+		inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 		return
 	}
 	key, err := r.ReadString(keyLen)
 	if err != nil {
+		inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 		return
 	}
 	bodyLen, err := r.ReadUint64()
 	if err != nil {
+		inst.logger.Error("Error reading from " + id.String() + ": " + err.Error())
 		return
 	}
 	maxInt := uint64(int(^uint(0) >> 1))
 	if bodyLen > maxInt {
+		inst.logger.Warn("Bad message format from " + id.String())
 		return
 	}
 
+	inst.logger.Info("Message received on " + channel + ":" + key + " from " + id.String() + " - length " + strconv.Itoa(int(bodyLen)))
 	var shouldAck = true
 
 	if channel == ReservedTolliverChannel {
@@ -334,10 +364,12 @@ func buildAck(status byte, id uint64) []byte {
 func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLength uint64) {
 	code, err := r.ReadByte()
 	if err != nil || !(code == 0 || code == 1) {
+		inst.logger.Error("Invalid system message received from " + id.String())
 		return
 	}
 	var entries []common.SubcriptionInfo
 	if err := r.ReadSubs(&entries); err != nil {
+		inst.logger.Error("Error reading subscriptions from " + id.String())
 		return
 	}
 
@@ -346,16 +378,19 @@ func (inst *Instance) systemMessage(r *binary.Reader, id uuid.UUID, expectedLeng
 		bytesRead += 8 + uint64(len(entry.Channel)) + 8 + uint64(len(entry.Key))
 	}
 	if bytesRead != expectedLength {
+		inst.logger.Warn("Unexpected number of bytes read from " + id.String())
 		return
 	}
 
 	for _, entry := range entries {
 		if code == 0 {
+			inst.logger.Info("Subscription to " + entry.Channel + ":" + entry.Key + " recorded for " + id.String())
 			inst.l.Lock()
 			db.Subscribe(entry.Channel, entry.Key, id, inst.db)
 			inst.l.Unlock()
 		}
 		if code == 1 {
+			inst.logger.Info("Unsubscription from" + entry.Channel + ":" + entry.Key + " recorded for " + id.String())
 			inst.l.Lock()
 			db.Unsubscribe(entry.Channel, entry.Key, id, inst.db)
 			inst.l.Unlock()
@@ -412,9 +447,7 @@ func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
 	mes := buildMes(body, id, channel, key)
 
 	for _, v := range recipientConns {
-		if v == nil {
-			fmt.Printf("In send: % x \n", mes)
-		}
+		inst.logger.Info("Sending " + strconv.Itoa(len(mes)) + "bytes to " + v.LocalAddr().String())
 		connections.SendBytes(mes, v)
 	}
 }

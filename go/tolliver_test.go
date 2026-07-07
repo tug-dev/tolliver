@@ -8,10 +8,12 @@ import (
 	"log"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	tolliver "github.com/tug-dev/tolliver/go"
 )
@@ -80,8 +82,9 @@ func makeInstance(logger *slog.Logger, remotes []tolliver.RemoteAddr) *tolliver.
 		DatabasePath: fmt.Sprintf("%d.tolliver.db", n),
 		CA:           certPool,
 		InstanceCert: makeCert(globalCaName),
-		Port:         min(uint16(n+1000), 1001),
+		Port:         max(uint16(n), 1025),
 		Logger:       logger,
+		Interface:    "127.0.0.1",
 	}
 
 	out, err := tolliver.NewInstance(&config)
@@ -105,19 +108,33 @@ func globalSetup() {
 	globalCaName = name
 }
 
-func TestHandshakeSuccess(t *testing.T) {
+func TestMain(m *testing.M) {
+	certPool = x509.NewCertPool()
 	globalSetup()
+	m.Run()
+	cleanup()
+	toClean = make([]string, 0)
+}
 
+func TestHandshakeSuccess(t *testing.T) {
 	var b1 strings.Builder
+	var b2 strings.Builder
 	i1 := makeInstance(makeLogger(&b1), nil)
-	i1.Register("", "", func(mes []byte) bool {
-		fmt.Printf("% x", mes)
-		return true
+
+	i2 := makeInstance(makeLogger(&b2), nil)
+	i2.NewConnection(tolliver.RemoteAddr{
+		&net.TCPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Port: i1.Port,
+			Zone: "",
+		},
+		"tug.dev",
 	})
 
-	print(b1.String())
+	time.Sleep(2 * time.Second)
 
-	cleanup()
+	println(b1.String())
+	println(b2.String())
 }
 
 // Handshake and all failure paths
