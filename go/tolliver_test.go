@@ -102,6 +102,43 @@ func makeLogger(b *strings.Builder) *slog.Logger {
 	return out
 }
 
+func matches(pattern, literal string) bool {
+	if strings.Contains(pattern, "*") {
+		a := strings.Split(pattern, "*")
+		if len(a) > 2 {
+			return false
+		}
+
+		if len(literal) >= len(a[0]) && a[0] == literal[0:len(a[0])] {
+			return true
+		} else {
+			return false
+		}
+	}
+
+	return pattern == literal
+}
+
+func expectLogs(log string, lines ...string) bool {
+	pointer := 0
+	for _, l := range strings.Split(log, "\n") {
+		a := strings.Split(l, "msg=\"")
+		if len(a) == 1 {
+			continue
+		}
+
+		msg := a[1][0 : len(a[1])-1]
+		if matches(lines[pointer], msg) {
+			pointer++
+			if pointer == len(lines) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 func globalSetup() {
 	name, ca := makeCa()
 	certPool.AppendCertsFromPEM(ca)
@@ -133,8 +170,13 @@ func TestHandshakeSuccess(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	println(b1.String())
-	println(b2.String())
+	f1 := expectLogs(b1.String(), "Started listening on *", "Connection established *")
+	f2 := expectLogs(b2.String(), "Started listening on *", "Connection established *")
+	if !f1 || !f2 {
+		println(b1.String())
+		println(b2.String())
+		t.Fail()
+	}
 }
 
 // Handshake and all failure paths
