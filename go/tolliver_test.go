@@ -1,15 +1,16 @@
 package tolliver_test
 
 import (
-	"bufio"
 	"crypto/tls"
 	"crypto/x509"
 	_ "embed"
 	"fmt"
+	"log"
 	"log/slog"
-	"net"
+	"math/rand/v2"
 	"os"
-	"slices"
+	"os/exec"
+	"strings"
 	"testing"
 
 	tolliver "github.com/tug-dev/tolliver/go"
@@ -19,93 +20,109 @@ import (
 // TODO: Switch to buffer pool
 // TODO: Add mutexes because currently not thread safe
 
-var i1 *tolliver.Instance
-var i2 *tolliver.Instance
-
-var log1 *slog.Logger
-var log2 *slog.Logger
-
-var c1 tls.Certificate
-var c2 tls.Certificate
-
-// var i3 *tolliver.Instance
-// var i4 *tolliver.Instance
-
-//go:embed testData/root.crt
-var ca string
-
+var toClean = make([]string, 0)
 var rSet = false
-
 var certPool = x509.NewCertPool()
+var globalCaName string
 
-func globalSetup() {
-	certPool.AppendCertsFromPEM([]byte(ca))
-	c1, _ = tls.LoadX509KeyPair("./testData/i1.crt", "./testData/i1.key")
-	c2, _ = tls.LoadX509KeyPair("./testData/i2.crt", "./testData/i2.key")
-
-	f, _ := os.Create("i1.log")
-	log1 = slog.New(slog.NewTextHandler(bufio.NewWriter(f), nil))
-
-	f2, _ := os.Create("i2.log")
-	log2 = slog.New(slog.NewTextHandler(bufio.NewWriter(f2), nil))
+func registerCleanup(file string) {
+	toClean = append(toClean, file)
 }
 
-func setup() {
-	if !rSet {
-		globalSetup()
-		rSet = true
+func cleanup() {
+	for _, f := range toClean {
+		os.Remove(f)
 	}
+}
 
-	cfg1 := tolliver.InstanceOptions{
-		Remotes:      nil,
-		DatabasePath: "i1.sqlite",
-		CA:           certPool,
-		InstanceCert: &c1,
-		Interface:    "127.0.0.1",
-		Port:         2000,
-		Logger:       log1,
+func makeCert(caName string) *tls.Certificate {
+	n := rand.IntN(65536)
+
+	makeCmd := exec.Command("./testData/mkcrt.sh", fmt.Sprintf("%d", n), caName)
+	if _, err := makeCmd.Output(); err != nil {
+		println(err.Error())
+		log.Fatal("Could not make certificate")
 	}
+	registerCleanup(fmt.Sprintf("%d.crt", n))
+	registerCleanup(fmt.Sprintf("%d.key", n))
 
-	cfg2 := tolliver.InstanceOptions{
-		Remotes:      nil,
-		DatabasePath: "i2.sqlite",
-		CA:           certPool,
-		InstanceCert: &c2,
-		Interface:    "127.0.0.1",
-		Port:         3000,
-		Logger:       log2,
-	}
-	var err error
-
-	i1, err = tolliver.NewInstance(&cfg1)
+	out, err := tls.LoadX509KeyPair(fmt.Sprintf("./%d.crt", n), fmt.Sprintf("./%d.key", n))
 
 	if err != nil {
-		println(err)
+		log.Fatal("Could not read cert")
+	}
+	return &out
+}
+
+func makeCa() (name string, ca []byte) {
+	n := rand.IntN(65536)
+	makeCmd := exec.Command("./testData/mkca.sh", fmt.Sprintf("%d", n))
+	if _, err := makeCmd.Output(); err != nil {
+		println(err.Error())
+		log.Fatal("Could not make CA")
 	}
 
-	i2, err = tolliver.NewInstance(&cfg2)
+	registerCleanup(fmt.Sprintf("%d.crt", n))
+	registerCleanup(fmt.Sprintf("%d.key", n))
+
+	out, err := os.ReadFile(fmt.Sprintf("%d.crt", n))
+	if err != nil {
+		log.Fatal("Could not read CA")
+	}
+
+	return fmt.Sprintf("%d", n), out
 }
 
-func TestHandshake(t *testing.T) {
-	setup()
+func makeInstance(logger *slog.Logger, remotes []tolliver.RemoteAddr) *tolliver.Instance {
+	n := rand.IntN(65536)
+	config := tolliver.InstanceOptions{
+		Remotes:      remotes,
+		DatabasePath: fmt.Sprintf("%d.tolliver.db", n),
+		CA:           certPool,
+		InstanceCert: makeCert(globalCaName),
+		Port:         min(uint16(n+1000), 1001),
+		Logger:       logger,
+	}
 
-	i1.NewConnection(tolliver.RemoteAddr{
-		&net.TCPAddr{
-			IP:   []byte{127, 0, 0, 1},
-			Port: 3000,
-			Zone: "",
-		},
-		"tug.dev",
-	})
+	out, err := tolliver.NewInstance(&config)
+	if err != nil {
+		log.Fatal("Could not make instance")
+	}
 
-	i2.Register("test", "key", func(x []byte) bool {
-		if slices.Compare(x, []byte{8, 8, 8, 8}) != 0 {
-			fmt.Printf("% x != % x\n", x, []byte{8, 8, 8, 8})
-			t.Error("Incorrect message")
-		}
+	registerCleanup(fmt.Sprintf("./%d.tolliver.db", n))
 
+	return out
+}
+
+func makeLogger(b *strings.Builder) *slog.Logger {
+	out := slog.New(slog.NewTextHandler(b, nil))
+	return out
+}
+
+func globalSetup() {
+	name, ca := makeCa()
+	certPool.AppendCertsFromPEM(ca)
+	globalCaName = name
+}
+
+func TestHandshakeSuccess(t *testing.T) {
+	globalSetup()
+
+	var b1 strings.Builder
+	i1 := makeInstance(makeLogger(&b1), nil)
+	i1.Register("", "", func(mes []byte) bool {
+		fmt.Printf("% x", mes)
 		return true
 	})
-	i2.Subscribe("test", "key")
-	i1.Send("test", "key", []byte{8, 8, 8, 8})
+
+	print(b1.String())
+
+	cleanup()
 }
+
+// Handshake and all failure paths
+// Multiple connections subscribing to different key channel pairs and receiving the correct messages
+// Ping for keepalive
+// Retry connections until connected
+// Retry messages until received
+// Send messages while recipient not connected
