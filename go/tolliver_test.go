@@ -1,6 +1,7 @@
 package tolliver_test
 
 import (
+	"bufio"
 	"crypto/tls"
 	"crypto/x509"
 	_ "embed"
@@ -78,8 +79,7 @@ func makeCa() (name string, ca []byte) {
 func makeInstance(logger *slog.Logger, remotes []tolliver.RemoteAddr) *tolliver.Instance {
 	n := rand.IntN(65536)
 	config := tolliver.InstanceOptions{
-		Remotes:      remotes,
-		DatabasePath: fmt.Sprintf("%d.tolliver.db", n),
+		Remotes: remotes, DatabasePath: fmt.Sprintf("%d.tolliver.db", n),
 		CA:           certPool,
 		InstanceCert: makeCert(globalCaName),
 		Port:         max(uint16(n), 1025),
@@ -177,6 +177,120 @@ func TestHandshakeSuccess(t *testing.T) {
 		println(b2.String())
 		t.Fail()
 	}
+}
+
+func TestHandshakeSubs(t *testing.T) {
+	var b1, b2 strings.Builder
+	i1 := makeInstance(makeLogger(&b1), nil)
+	i2 := makeInstance(makeLogger(&b2), nil)
+
+	i1.Subscribe("test1", "key1")
+	i1.Subscribe("test2", "key2")
+
+	i2.Subscribe("test3", "key3")
+	i2.Subscribe("test4", "key4")
+
+	i2.NewConnection(tolliver.RemoteAddr{
+		&net.TCPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Port: i1.Port,
+			Zone: "",
+		},
+		"tug.dev",
+	})
+
+	time.Sleep(1 * time.Second)
+
+	f1 := expectLogs(b1.String(), "Connection established *", "Subscription recorded for test3:key3 *", "Subscription recorded for test4:key4 *")
+	f2 := expectLogs(b2.String(), "Connection established *", "Subscription recorded for test1:key1 *", "Subscription recorded for test2:key2 *")
+
+	if !f1 || !f2 {
+		println(b1.String())
+		println(b2.String())
+		t.Fail()
+	}
+}
+
+func TestHandshakeDurability(t *testing.T) {
+	var b1, b2 strings.Builder
+	i1 := makeInstance(makeLogger(&b1), nil)
+
+	i1.NewConnection(tolliver.RemoteAddr{
+		&net.TCPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Port: 8080,
+			Zone: "",
+		},
+		"tug.dev",
+	})
+
+	time.Sleep(100 * time.Millisecond)
+
+	_, err := tolliver.NewInstance(
+		&tolliver.InstanceOptions{
+			DatabasePath: "late.db",
+			CA:           certPool,
+			InstanceCert: makeCert(globalCaName),
+			Interface:    "127.0.0.1",
+			Port:         8080,
+			Logger:       makeLogger(&b2),
+		},
+	)
+
+	time.Sleep(100 * time.Millisecond)
+
+	if err != nil {
+		log.Fatal("Could not make instance")
+	}
+	registerCleanup("late.db")
+
+	f1 := expectLogs(b1.String(), "Failed to connect *", "Connection established *")
+	f2 := expectLogs(b2.String(), "Connection established *")
+
+	if !f1 || !f2 {
+		println(b1.String())
+		println(b2.String())
+		t.Fail()
+	}
+}
+
+func TestHandshakeCutout(t *testing.T) {
+	var b1 strings.Builder
+	i1 := makeInstance(makeLogger(&b1), nil)
+
+	lst, err := tls.Listen("tcp", "127.0.0.1:8081", &tls.Config{
+		Certificates: []tls.Certificate{*makeCert(globalCaName)},
+		RootCAs:      certPool,
+	})
+
+	if err != nil {
+		log.Fatal("Could not start listener: " + err.Error())
+	}
+
+	i1.NewConnection(tolliver.RemoteAddr{
+		&net.TCPAddr{
+			IP:   []byte{127, 0, 0, 1},
+			Port: 8081,
+			Zone: "",
+		},
+		"tug.dev",
+	})
+
+	conn, err := lst.Accept()
+	if err != nil {
+		log.Fatal("Could not accept connection")
+	}
+	r := bufio.NewReader(conn)
+
+	for _ = range 33 {
+		r.ReadByte()
+	}
+
+	conn.Write([]byte{10, 200, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0})
+	time.Sleep(1 * time.Second)
+
+	println(b1.String())
+
 }
 
 // Handshake and all failure paths

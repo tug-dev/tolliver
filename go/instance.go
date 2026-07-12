@@ -21,16 +21,17 @@ import (
 )
 
 type Instance struct {
-	certs     []tls.Certificate
-	authority *x509.CertPool
-	subs      []common.SubcriptionInfo
-	id        uuid.UUID
-	conns     map[uuid.UUID]net.Conn
-	callbacks map[*common.SubcriptionInfo][]func([]byte) bool
-	db        *sql.DB
-	l         sync.RWMutex
-	logger    *slog.Logger
-	Port      int
+	certs         []tls.Certificate
+	authority     *x509.CertPool
+	subs          []common.SubcriptionInfo
+	id            uuid.UUID
+	conns         map[uuid.UUID]net.Conn
+	callbacks     map[*common.SubcriptionInfo][]func([]byte) bool
+	db            *sql.DB
+	l             sync.RWMutex
+	logger        *slog.Logger
+	Port          int
+	handshakeLock sync.Mutex
 }
 
 type DialError struct {
@@ -52,6 +53,8 @@ const (
 	HandshakeFinalMessageCode
 	RegularMessageCode
 	AckMessageCode
+	Ping
+	Pong
 )
 
 const (
@@ -75,18 +78,23 @@ func (inst *Instance) newConnection(addr RemoteAddr) {
 		conn, err := tls.Dial("tcp", addr.String(), opts)
 		if err != nil {
 			inst.logger.Error("Failed to connect to " + addr.Addr.String() + " :" + err.Error())
+			time.Sleep(10 * time.Millisecond)
 			continue
 		}
 
+		inst.handshakeLock.Lock()
 		remId, remSubs, err := handshake.SendTolliverHandshake(conn, inst.id, inst.subs)
 		if err != nil {
 			inst.logger.Error("Tolliver handshake with " + addr.Addr.String() + " failed - " + err.Error())
+			inst.handshakeLock.Unlock()
+			time.Sleep(100)
 			continue
 		}
 
 		inst.l.RLock()
 		if inst.conns[remId] != nil {
 			inst.logger.Warn("Connection already existed to node with id " + remId.String())
+			inst.handshakeLock.Unlock()
 			return
 		}
 		inst.l.RUnlock()
@@ -96,13 +104,14 @@ func (inst *Instance) newConnection(addr RemoteAddr) {
 		inst.l.Lock()
 		for _, s := range remSubs {
 			db.Subscribe(s.Channel, s.Key, remId, inst.db)
-			inst.logger.Info("subscription on " + s.Channel + ":" + s.Key + " recorded for " + remId.String())
+			inst.logger.Info("Subscription recorded for " + s.Channel + ":" + s.Key + " recorded for " + remId.String())
 		}
 		inst.l.Unlock()
 
 		inst.l.Lock()
 		inst.conns[remId] = conn
 		inst.l.Unlock()
+		inst.handshakeLock.Unlock()
 		go inst.handleConn(binary.NewReader(conn), conn, remId)
 		return
 	}
@@ -201,6 +210,13 @@ func (inst *Instance) retry(interval time.Duration) {
 				connections.SendBytes(buildMes(v.Payload, v.MesId, v.Channel, v.Key), c)
 			}
 		}
+		for k, v := range inst.conns {
+			if v != nil {
+				connections.SendBytes([]byte{Ping}, v)
+			} else {
+				inst.logger.Warn("Connection lost to " + k.String())
+			}
+		}
 		inst.l.RUnlock()
 	}
 }
@@ -258,17 +274,20 @@ func (inst *Instance) handleConn(r *binary.Reader, conn net.Conn, id uuid.UUID) 
 
 		switch mesType {
 		case HandshakeRequestMessageCode:
-			// TODO: Re send handshake maybe
+			conn.Close()
 		case HandshakeResponseMessageCode:
-			// Handshake
+			conn.Close()
 		case HandshakeFinalMessageCode:
-			// Handshake
+			conn.Close()
 		case RegularMessageCode:
 			// Regular message
 			inst.processRegularMessage(r, conn, id)
 		case AckMessageCode:
 			// Ack
 			inst.proccessAck(r, id)
+		case Ping:
+			inst.logger.Info("Ping from " + id.String())
+			connections.SendBytes([]byte{Pong}, conn)
 		}
 	}
 }
@@ -435,6 +454,8 @@ func (inst *Instance) findRecipients(channel, key string) ([]net.Conn, []uuid.UU
 }
 
 func (inst *Instance) send(body []byte, channel, key string, reliable bool) {
+	inst.handshakeLock.Lock()
+	inst.handshakeLock.Unlock()
 	recipientConns, recipientIds := inst.findRecipients(channel, key)
 
 	// This represents an unreliable message
